@@ -18,6 +18,9 @@ import os
 from functools import partial
 from typing import Dict
 
+import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 from datasets import Dataset, load_dataset
 from transformers import AutoTokenizer
 from transformers.trainer_pt_utils import LabelSmoother
@@ -45,12 +48,27 @@ def build_text_sft_dataset(
     Returns:
         A tuple of the training and validation datasets.
     """
-    if filename.endswith(".json") is False or not os.path.exists(filename):
-        raise Exception(f"dataset {filename} not exists.")
+    if not os.path.exists(filename) or not (filename.endswith((".json", ".parquet"))):
+        raise Exception(f"Dataset {filename} does not exist or is not in JSON or Parquet format.")
 
     data_processor = partial(_generate_and_tokenize_conversations, tokenizer, model_max_length)
 
-    data = load_dataset("json", data_files=filename, cache_dir=cache_dir)["train"].shuffle().map(data_processor)
+    # Since pyarrow has a bug when loading huge json files, we use chunking to convert the json file to dataset
+    # @see: https://issues.apache.org/jira/browse/ARROW-17137
+    parquet_file = f"{filename}.parquet" if filename.endswith(".json") else filename
+    if os.path.exists(parquet_file) is False and filename.endswith(".json"):
+        df = pd.read_json(filename)
+        chunk_size = 500_000
+        table = pa.Table.from_batches(
+            [pa.record_batch(df.iloc[i : i + chunk_size]) for i in range(0, len(df), chunk_size)]
+        )
+        pq.write_table(table, parquet_file)
+
+    data = (
+        load_dataset("parquet", data_files=parquet_file, cache_dir=cache_dir)["train"]
+        .shuffle()
+        .map(data_processor, num_proc=8)
+    )
 
     for i in range(PRINT_EXAMPLES_NUM):
         # since this function is called in torch_distributed_zero_first, no need rank_0_print

@@ -86,9 +86,9 @@ torchrun --nproc_per_node=8 -m yuren_trainer.text_sft \
   --model_name_or_path "dist/yuren-13b-base" --train_file 'train.json' \
   --validation_file 'validation.json' --model_max_length 4096 \
   --num_train_epochs 3 --per_device_eval_batch_size 4 --per_device_train_batch_size 4 \
-  --gradient_accumulation_steps 4 --evaluation_strategy "steps" --eval_steps 512 \
-  --save_strategy "steps" --save_steps 340 --save_total_limit 8 --learning_rate 5e-5 \
-  --weight_decay 0 --lr_scheduler_type "cosine" --logging_steps 4 --tf32 True --bf16 True \
+  --gradient_accumulation_steps 4 --evaluation_strategy "steps" --eval_steps 1024 \
+  --save_strategy "steps" --save_steps 340 --save_total_limit 8 --learning_rate 2e-4 \
+  --weight_decay 0 --lr_scheduler_type "constant" --logging_steps 4 --tf32 True --bf16 True \
   --run_name yuren-baichuan-13b-qlora-stage1 --warmup_ratio 0.03 --gradient_checkpointing True \
   --dataloader_drop_last True --group_by_length True --optim "paged_adamw_8bit" --max_grad_norm 0.3 \
   --use_lora True --lora_config "apps/yuren_trainer/config/qlora.json" --output_dir "dist/yuren-13b-stage1"

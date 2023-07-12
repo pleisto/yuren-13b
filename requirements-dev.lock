@@ -128,6 +128,7 @@ toolz==0.12.0
 torch==2.0.1
 tqdm==4.65.0
 transformers==4.30.2
+transformers-stream-generator==0.0.4
 typing-extensions==4.5.0
 typing-inspect==0.8.0
 tzdata==2023.3

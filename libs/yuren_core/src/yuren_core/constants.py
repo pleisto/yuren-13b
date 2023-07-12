@@ -13,7 +13,7 @@
  See the License for the specific language governing permissions and
  limitations under the License.
  """
-
+PAD_TOKEN = "<pad>"
 IM_START_TOKEN = "<|im_start|>"
 IM_END_TOKEN = "<|im_end|>"
 

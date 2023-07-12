@@ -16,8 +16,14 @@
 from typing import Dict
 
 import requests
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, PreTrainedModel, PreTrainedTokenizer
-from yuren_core.constants import IM_END_TOKEN, IM_START_TOKEN
+from transformers import (
+    AutoConfig,
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    PreTrainedModel,
+    PreTrainedTokenizer,
+)
+from yuren_core.constants import PAD_TOKEN, IM_END_TOKEN, IM_START_TOKEN
 
 
 def smart_tokenizer_and_embedding_resize(
@@ -79,17 +85,14 @@ def main():
     original_model_path = "baichuan-inc/Baichuan-13B-Base"
     special_tokens_dict = {
         "additional_special_tokens": [
+            PAD_TOKEN,
             IM_START_TOKEN,
             IM_END_TOKEN,
-            # will be added by the multimodal pipeline
-            # constants.IMAGE_PATCH_TOKEN,
-            # constants.IMAGE_START_TOKEN,
-            # constants.IMAGE_END_TOKEN,
         ]
     }
 
     tokenizer = AutoTokenizer.from_pretrained(original_model_path, trust_remote_code=True)
-    model_config = AutoConfig.from_pretrained(original_model_path)
+    model_config = AutoConfig.from_pretrained(original_model_path, trust_remote_code=True)
 
     #  fix the max_position_embeddings to 4096, because baichuan-7b has 4096 max tokens
     model_config.max_position_embeddings = 4096

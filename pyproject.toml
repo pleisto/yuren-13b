@@ -16,6 +16,7 @@ dependencies = [
     "accelerate>=0.20.3",
     "setuptools>=68.0.0",
     "scipy>=1.10.1",
+    "transformers_stream_generator>=0.0.4",
 ]
 readme = "README.md"
 requires-python = ">= 3.10"
