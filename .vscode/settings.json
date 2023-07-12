@@ -1,0 +1,29 @@
+{
+  "[python]": {
+    "editor.defaultFormatter": "ms-python.black-formatter"
+  },
+  "python.formatting.provider": "none",
+  "cSpell.words": [
+    "baichuan",
+    "docstrings",
+    "dtype",
+    "fsdp",
+    "gradio",
+    "keepdim",
+    "Lianjia",
+    "lmsys",
+    "outputing",
+    "peft",
+    "Pleisto",
+    "postprocess",
+    "Sharded",
+    "torchrun",
+    "wandb",
+    "webui",
+    "yuren"
+  ],
+  "python.analysis.extraPaths": [
+    "/Users/ding/.pyenv/versions/3.10.9/lib/python3.10/site-packages",
+    "./libs/yuren_core/src"
+  ]
+}
