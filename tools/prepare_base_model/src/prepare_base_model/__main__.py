@@ -15,7 +15,6 @@
  """
 from typing import Dict
 
-import requests
 from transformers import (
     AutoConfig,
     AutoModelForCausalLM,
@@ -43,42 +42,30 @@ def smart_tokenizer_and_embedding_resize(
 
     # check if current token embedding has a available size
     model_vocab_size = model.get_input_embeddings().weight.shape[0]
-    has_available_size = model_vocab_size >= len(tokenizer) and model_vocab_size % VOCAB_MULTIPLE == 0
+    has_available_size = (
+        model_vocab_size >= len(tokenizer) and model_vocab_size % VOCAB_MULTIPLE == 0
+    )
 
     # resize token embedding if not has available size
     if not has_available_size:
         # find the closest divisible by 64 with len(tokenizer)
-        model.resize_token_embeddings((len(tokenizer) + VOCAB_MULTIPLE - 1) // VOCAB_MULTIPLE * VOCAB_MULTIPLE)
+        model.resize_token_embeddings(
+            (len(tokenizer) + VOCAB_MULTIPLE - 1) // VOCAB_MULTIPLE * VOCAB_MULTIPLE
+        )
 
     if num_new_tokens > 0:
         input_embeddings = model.get_input_embeddings().weight.data
         output_embeddings = model.get_output_embeddings().weight.data
 
-        input_embeddings_avg = input_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
-        output_embeddings_avg = output_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
+        input_embeddings_avg = input_embeddings[:-num_new_tokens].mean(
+            dim=0, keepdim=True
+        )
+        output_embeddings_avg = output_embeddings[:-num_new_tokens].mean(
+            dim=0, keepdim=True
+        )
 
         input_embeddings[-num_new_tokens:] = input_embeddings_avg
         output_embeddings[-num_new_tokens:] = output_embeddings_avg
-
-
-def save_modeling(path: str):
-    print("Downloading modeling_baichuan.py, tokenization_baichuan.py, configuration_baichuan.py")
-    modeling_url = "https://huggingface.co/baichuan-inc/Baichuan-13B-Base/raw/main/modeling_baichuan.py"
-    tokenizers_url = "https://huggingface.co/baichuan-inc/Baichuan-13B-Base/raw/main/tokenization_baichuan.py"
-    configuration_url = "https://huggingface.co/baichuan-inc/Baichuan-13B-Base/raw/main/configuration_baichuan.py"
-
-    modeling_response = requests.get(modeling_url)
-    tokenizers_response = requests.get(tokenizers_url)
-    configuration_response = requests.get(configuration_url)
-
-    with open(f"{path}/modeling_baichuan.py", "wb") as f:
-        f.write(modeling_response.content)
-
-    with open(f"{path}/tokenization_baichuan.py", "wb") as f:
-        f.write(tokenizers_response.content)
-
-    with open(f"{path}/configuration_baichuan.py", "wb") as f:
-        f.write(configuration_response.content)
 
 
 def main():
@@ -91,8 +78,12 @@ def main():
         ]
     }
 
-    tokenizer = AutoTokenizer.from_pretrained(original_model_path, trust_remote_code=True)
-    model_config = AutoConfig.from_pretrained(original_model_path, trust_remote_code=True)
+    tokenizer = AutoTokenizer.from_pretrained(
+        original_model_path, trust_remote_code=True
+    )
+    model_config = AutoConfig.from_pretrained(
+        original_model_path, trust_remote_code=True
+    )
 
     #  fix the max_position_embeddings to 4096, because baichuan-7b has 4096 max tokens
     model_config.max_position_embeddings = 4096
@@ -114,7 +105,6 @@ def main():
     tokenizer.save_pretrained(output_path)
     print(f"Tokenizer saved to {output_path}")
     model.save_pretrained(output_path)
-    save_modeling(output_path)
     print(f"Model saved to {output_path}")
 
 

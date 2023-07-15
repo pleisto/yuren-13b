@@ -49,9 +49,13 @@ def build_text_sft_dataset(
         A tuple of the training and validation datasets.
     """
     if not os.path.exists(filename) or not (filename.endswith((".json", ".parquet"))):
-        raise Exception(f"Dataset {filename} does not exist or is not in JSON or Parquet format.")
+        raise Exception(
+            f"Dataset {filename} does not exist or is not in JSON or Parquet format."
+        )
 
-    data_processor = partial(_generate_and_tokenize_conversations, tokenizer, model_max_length)
+    data_processor = partial(
+        _generate_and_tokenize_conversations, tokenizer, model_max_length
+    )
 
     # Since pyarrow has a bug when loading huge json files, we use chunking to convert the json file to dataset
     # @see: https://issues.apache.org/jira/browse/ARROW-17137
@@ -60,7 +64,10 @@ def build_text_sft_dataset(
         df = pd.read_json(filename)
         chunk_size = 500_000
         table = pa.Table.from_batches(
-            [pa.record_batch(df.iloc[i : i + chunk_size]) for i in range(0, len(df), chunk_size)]
+            [
+                pa.record_batch(df.iloc[i : i + chunk_size])
+                for i in range(0, len(df), chunk_size)
+            ]
         )
         pq.write_table(table, parquet_file)
 
@@ -69,6 +76,12 @@ def build_text_sft_dataset(
         .shuffle()
         .map(data_processor, num_proc=8)
     )
+
+    cols_to_keep = ["input_ids", "labels", "attention_mask"]
+    remove_cols = [col for col in data.column_names if col not in cols_to_keep]
+    data = data.remove_columns(remove_cols)
+
+    # data.save_to_disk(f"{filename}.saved.parquet")
 
     for i in range(PRINT_EXAMPLES_NUM):
         # since this function is called in torch_distributed_zero_first, no need rank_0_print
@@ -105,7 +118,9 @@ def _generate_and_tokenize_conversations(
             raise ValueError(f"Unknown sentence: {sentence}")
 
         if role == role_mapping["system"]:
-            formatted_sentence = IM_START_TOKEN + role + "\n" + sentence["value"] + IM_END_TOKEN
+            formatted_sentence = (
+                IM_START_TOKEN + role + "\n" + sentence["value"] + IM_END_TOKEN
+            )
         elif role == role_mapping["human"]:
             formatted_sentence = (
                 f"\n{IM_START_TOKEN}"
@@ -119,7 +134,9 @@ def _generate_and_tokenize_conversations(
         else:
             formatted_sentence = sentence["value"] + IM_END_TOKEN
 
-        encoded_sentence = tokenizer.encode(formatted_sentence, add_special_tokens=False)  # do not add bos_token_id
+        encoded_sentence = tokenizer.encode(
+            formatted_sentence, add_special_tokens=False
+        )  # do not add bos_token_id
         label = (
             copy.deepcopy(encoded_sentence)
             if role == role_mapping["gpt"]
