@@ -4,7 +4,8 @@
   },
   "python.formatting.provider": "none",
   "cSpell.words": [
-    "baichuan",
+    "arange",
+    "chatml",
     "docstrings",
     "dtype",
     "fsdp",
@@ -12,20 +13,30 @@
     "iloc",
     "keepdim",
     "Lianjia",
+    "LLaMA",
     "lmsys",
+    "nheads",
+    "numel",
+    "optim",
     "outputing",
     "peft",
     "Pleisto",
     "postprocess",
     "pyarrow",
+    "qkvpacked",
+    "qlora",
     "Sharded",
+    "softmax",
     "torchrun",
+    "unpad",
+    "varlen",
     "wandb",
     "webui",
     "yuren"
   ],
   "python.analysis.extraPaths": [
     "/Users/ding/.pyenv/versions/3.10.9/lib/python3.10/site-packages",
-    "./libs/yuren_core/src"
+    "./libs/yuren_core/src",
+    "./apps/yuren_trainer/src"
   ]
 }

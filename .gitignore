@@ -12,3 +12,4 @@ wheels/
 *.tsbuildinfo
 *.log
 *.egg-info/
+!data/llama2-han-tokenizer/dist

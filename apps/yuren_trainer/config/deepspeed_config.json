@@ -4,6 +4,8 @@
     "params": {
       "lr": "auto",
       "weight_decay": "auto",
+      "betas": "auto",
+      "eps": "auto",
       "torch_adam": true,
       "adam_w_mode": true
     }
@@ -21,21 +23,15 @@
     "enabled": true
   },
   "zero_optimization": {
-    "stage": 3,
+    "stage": 2,
     "overlap_comm": true,
     "contiguous_gradients": true,
     "sub_group_size": 0,
-    "reduce_bucket_size": "auto",
-    "stage3_prefetch_bucket_size": "auto",
-    "stage3_param_persistence_threshold": "auto",
-    "stage3_max_live_parameters": 0,
-    "stage3_max_reuse_distance": 0,
-    "stage3_gather_16bit_weights_on_model_save": true
+    "reduce_bucket_size": "auto"
   },
   "gradient_accumulation_steps": "auto",
   "gradient_clipping": "auto",
   "steps_per_print": 1000,
-  "prescale_gradients": false,
   "train_batch_size": "auto",
   "train_micro_batch_size_per_gpu": "auto",
   "wall_clock_breakdown": false

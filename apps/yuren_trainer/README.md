@@ -1,1 +1,1 @@
-# yuren sft trainer
+# YuRen LLM Trainer

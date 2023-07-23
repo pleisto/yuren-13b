@@ -16,6 +16,3 @@
 PAD_TOKEN = "<pad>"
 IM_START_TOKEN = "<|im_start|>"
 IM_END_TOKEN = "<|im_end|>"
-
-
-PAD_TOKEN_ID = 64000

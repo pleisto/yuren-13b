@@ -15,8 +15,9 @@
  """
 import copy
 import os
+from dataclasses import dataclass, field
 from functools import partial
-from typing import Dict
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 import pyarrow as pa
@@ -25,19 +26,34 @@ from datasets import Dataset, load_dataset
 from transformers import AutoTokenizer
 from transformers.trainer_pt_utils import LabelSmoother
 from yuren_core.constants import IM_END_TOKEN, IM_START_TOKEN
+from .utils import is_huge_dataset
 
 IGNORE_TOKEN_ID = LabelSmoother.ignore_index
-PRINT_EXAMPLES_NUM = 2
+PROC_NUM = 8
 
 
-def build_text_sft_dataset(
+@dataclass
+class DataArguments:
+    """
+    Arguments pertaining to what data we are going to input our model for training and eval.
+    """
+
+    train_file: Optional[str] = field(default=None, metadata={"help": "The input training data file (a text file)."})
+    validation_file: Optional[str] = field(
+        default=None,
+        metadata={"help": "An optional input evaluation data file to evaluate the perplexity on (a text file)."},
+    )
+
+
+def build_dataset(
+    is_chatml: bool,
     model_max_length: int,
     cache_dir: str,
     tokenizer: AutoTokenizer,
     filename: str,
 ) -> Dataset:
     """
-    Builds the training and validation datasets for text-only supervised training.
+    Builds the training and validation datasets for supervised training.
 
     Args:
         train_file: The path to the training dataset file.
@@ -49,56 +65,53 @@ def build_text_sft_dataset(
         A tuple of the training and validation datasets.
     """
     if not os.path.exists(filename) or not (filename.endswith((".json", ".parquet"))):
-        raise Exception(
-            f"Dataset {filename} does not exist or is not in JSON or Parquet format."
-        )
+        raise Exception(f"Dataset {filename} does not exist or is not in JSON or Parquet format.")
 
-    data_processor = partial(
-        _generate_and_tokenize_conversations, tokenizer, model_max_length
+    if is_huge_dataset(filename) is False and filename.endswith(".json"):
+        dataset_loader = partial(load_dataset, "json")
+    else:
+        dataset_loader = partial(load_dataset, "parquet")
+        if filename.endswith(".json"):
+            # Since pyarrow has a bug when loading huge json files, we use chunking to convert the json file to dataset
+            # @see: https://issues.apache.org/jira/browse/ARROW-17137
+            original_filename = filename
+            filename = f"{filename}.parquet"
+            if os.path.exists(filename) is False:
+                df = pd.read_json(original_filename)
+                chunk_size = 500_000
+                table = pa.Table.from_batches(
+                    [pa.record_batch(df.iloc[i : i + chunk_size]) for i in range(0, len(df), chunk_size)]
+                )
+                pq.write_table(table, filename)
+
+            print(
+                "Warning: Since pyarrow has a bug when loading huge json files, we convert json to parquet with "
+                f"custom function.\n If you modify the json file, please delete the cached parquet file: {filename}"
+            )
+
+    data = dataset_loader(data_files=filename, cache_dir=cache_dir)["train"].shuffle()
+    example_processor = _tokenize_chatml if is_chatml else _batch_tokenize_texts
+    data = data.map(
+        partial(example_processor, tokenizer, model_max_length),
+        num_proc=PROC_NUM,
+        batched=not is_chatml,
+        remove_columns=data.column_names,
     )
 
-    # Since pyarrow has a bug when loading huge json files, we use chunking to convert the json file to dataset
-    # @see: https://issues.apache.org/jira/browse/ARROW-17137
-    parquet_file = f"{filename}.parquet" if filename.endswith(".json") else filename
-    if os.path.exists(parquet_file) is False and filename.endswith(".json"):
-        df = pd.read_json(filename)
-        chunk_size = 500_000
-        table = pa.Table.from_batches(
-            [
-                pa.record_batch(df.iloc[i : i + chunk_size])
-                for i in range(0, len(df), chunk_size)
-            ]
-        )
-        pq.write_table(table, parquet_file)
-
-    data = (
-        load_dataset("parquet", data_files=parquet_file, cache_dir=cache_dir)["train"]
-        .shuffle()
-        .map(data_processor, num_proc=8)
-    )
-
-    cols_to_keep = ["input_ids", "labels", "attention_mask"]
-    remove_cols = [col for col in data.column_names if col not in cols_to_keep]
-    data = data.remove_columns(remove_cols)
-
-    # data.save_to_disk(f"{filename}.saved.parquet")
-
-    for i in range(PRINT_EXAMPLES_NUM):
+    for i in range(2):
         # since this function is called in torch_distributed_zero_first, no need rank_0_print
         print(f"{filename} tokenized example: {data[i]}")
 
     return data
 
 
-def _generate_and_tokenize_conversations(
-    tokenizer: AutoTokenizer, model_max_length: int, example: Dict
-) -> Dict[str, list]:
+def _tokenize_chatml(tokenizer: AutoTokenizer, max_len: int, example: Dict) -> Dict[str, List[int]]:
     """
-    Generates and tokenize the conversations for a dataset.
+    Generates and tokenize the ChatML conversation.
 
     Args:
         tokenizer (AutoTokenizer): The tokenizer to be used for encoding the text.
-        model_max_length (int): The maximum length of the model's input.
+        max_len (int): The maximum length of the model's input.
         example (dict): A dictionary containing the conversation data.
 
     Returns:
@@ -108,64 +121,120 @@ def _generate_and_tokenize_conversations(
     labels = []
     conversations = example["conversations"]
 
-    # mappings ShareGPT `from` value to OpenAI's ChatML format
-    role_mapping = {"human": "user", "system": "system", "gpt": "assistant"}
-
     for sentence in conversations:
-        role = role_mapping.get(sentence["from"].lower())
+        role = sentence["from"].lower()
 
         if role is None:
             raise ValueError(f"Unknown sentence: {sentence}")
 
-        if role == role_mapping["system"]:
-            formatted_sentence = (
-                IM_START_TOKEN + role + "\n" + sentence["value"] + IM_END_TOKEN
-            )
-        elif role == role_mapping["human"]:
+        if role == "system":
+            formatted_sentence = IM_START_TOKEN + role + "\n" + sentence["value"] + IM_END_TOKEN
+        elif role == "user":
             formatted_sentence = (
                 f"\n{IM_START_TOKEN}"
                 + role
                 + "\n"
                 + sentence["value"]
                 + f"{IM_END_TOKEN}\n{IM_START_TOKEN}"
-                + role_mapping["gpt"]
+                + "assistant"
                 + "\n"
             )
         else:
             formatted_sentence = sentence["value"] + IM_END_TOKEN
 
-        encoded_sentence = tokenizer.encode(
-            formatted_sentence, add_special_tokens=False
-        )  # do not add bos_token_id
-        label = (
-            copy.deepcopy(encoded_sentence)
-            if role == role_mapping["gpt"]
-            else [IGNORE_TOKEN_ID] * len(encoded_sentence)
-        )
+        encoded_sentence = tokenizer.encode(formatted_sentence)
+        label = copy.deepcopy(encoded_sentence) if role == "assistant" else [IGNORE_TOKEN_ID] * len(encoded_sentence)
         input_ids += encoded_sentence
         labels += label
 
-        # add eos at every end of assistant sentence
-        if role == role_mapping["gpt"]:
-            input_ids += [tokenizer.eos_token_id]  # make sure eos_token_id is correct
-            labels += [tokenizer.eos_token_id]
+    # add bos token for the first sentence in the conversation
+    input_ids = [tokenizer.bos_token_id] + input_ids
+    labels = [tokenizer.bos_token_id] + labels
 
-    input_ids = input_ids[: model_max_length - 1]
-    labels = labels[: model_max_length - 1]
-
-    # replace the last token with eos_token_id if it is not eos_token_id
-    if input_ids[-1] != tokenizer.eos_token_id:
-        input_ids[-1] = tokenizer.eos_token_id
-        labels[-1] = tokenizer.eos_token_id
+    # truncate the input_ids and labels to model_max_length
+    input_ids = input_ids[:max_len]
+    labels = labels[:max_len]
 
     # labels can not have all values being -100. 18 and 24 are just random numbers
-    if not any(x > IGNORE_TOKEN_ID for x in labels):
-        labels[18:24] = input_ids[18:24]
+    if all(x == IGNORE_TOKEN_ID for x in labels):
+        raise ValueError(f"Labels can not have all values being: {conversations}")
 
-    attention_mask = [1] * len(input_ids)
     tokenized_full_prompt = {
         "input_ids": input_ids,
-        "attention_mask": attention_mask,
+        "attention_mask": [1] * len(input_ids),
         "labels": labels,
     }
     return tokenized_full_prompt
+
+
+def _batch_tokenize_texts(
+    tokenizer: AutoTokenizer, max_len: int, examples: Dict[str, List[str]], overlap: int = 40
+) -> Dict[str, List[List[int]]]:
+    """
+    Batch generates and tokenize the text.
+
+    e.g. [bos] input_ids.. [bos] input_ids..
+
+    Args:
+        tokenizer (AutoTokenizer): The tokenizer to be used for encoding the text.
+        max_len (int): The maximum length of the model's input.
+        examples (dict): **batch** of examples.
+        overlap (int): The number of tokens to overlap between chunks.
+
+    Returns:
+        dict: A dictionary containing tokenized input ids, attention masks, and labels.
+    """
+    encoded_examples = {
+        "input_ids": [],
+        "labels": [],
+    }
+    for context, completion in zip(examples["context"], examples["completion"]):
+        encoded_input = tokenizer.encode(completion, add_special_tokens=False)
+        labels = copy.deepcopy(encoded_input)
+
+        # add context if it exists, and context should be ignored when calculating loss
+        if len(context) > 0:
+            encoded_context = tokenizer.encode(context, add_special_tokens=False)
+            encoded_input = encoded_context + encoded_input
+            labels = [IGNORE_TOKEN_ID] * len(encoded_context) + labels
+
+        # add bos token to the beginning of the input_ids and labels
+        encoded_examples["input_ids"].extend([tokenizer.bos_token_id] + encoded_input)
+        encoded_examples["labels"].extend([tokenizer.bos_token_id] + labels)
+
+    assert (
+        len(encoded_examples["input_ids"]) >= max_len
+    ), f"packed input ids length: {len(encoded_examples['input_ids'])} is smaller than max_len: {max_len}"
+
+    assert len(encoded_examples["input_ids"]) == len(encoded_examples["labels"])
+
+    def split_into_chunks(sequence: List[int], labels: List[int]) -> Tuple[List[List[int]], List[List[int]]]:
+        """
+        Splits a sequence into chunks of size max_len with an overlap.
+        Drops the last chunk if it is smaller than max_len.
+        """
+        chunks = []
+        label_chunks = []
+        start_index = 0
+
+        # handle the first chunk
+        if len(sequence) >= max_len:
+            chunks.append(sequence[:max_len])
+            label_chunks.append(labels[:max_len])
+            start_index += max_len
+
+        # handle the rest of the chunks
+        while start_index + max_len - overlap <= len(sequence):
+            chunks.append(sequence[start_index - overlap : start_index + max_len - overlap])
+            label_chunks.append([IGNORE_TOKEN_ID] * overlap + labels[start_index : start_index + max_len - overlap])
+
+            start_index += max_len - overlap
+
+        return chunks, label_chunks
+
+    input_chunks, label_chunks = split_into_chunks(encoded_examples["input_ids"], encoded_examples["labels"])
+
+    return {
+        "input_ids": input_chunks,
+        "labels": label_chunks,
+    }

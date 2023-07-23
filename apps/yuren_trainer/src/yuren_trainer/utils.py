@@ -15,12 +15,23 @@
  """
 import os
 import time
+from enum import Enum
 from typing import Union
 
 import torch
 from deepspeed.runtime.engine import DeepSpeedEngine
 from transformers.deepspeed import is_deepspeed_zero3_enabled
 from transformers.utils import logging
+
+
+class TrainTask(Enum):
+    """
+    The supported training tasks.
+    """
+
+    EMBED_TOKEN_ONLY = "embed_token"
+    INCREMENTALLY_TRAIN = "pt"
+    SUPERVISED_FINETUNE = "sft"
 
 
 def create_rank_0_printer(rank: int, output_dir: str):
@@ -96,3 +107,16 @@ def get_model_param_count(model: Union[DeepSpeedEngine, torch.nn.Module], traina
             return p.numel()
 
     return sum(numel(p) for p in model.parameters() if not trainable_only or p.requires_grad)
+
+
+def is_huge_dataset(file_path):
+    """
+    Check if the dataset is larger than 2GB.
+    """
+    file_size = os.stat(file_path).st_size
+
+    # Check if file is larger than 2GB
+    if file_size > 2 * 1024 * 1024 * 1024:
+        return True
+    else:
+        return False

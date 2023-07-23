@@ -1,25 +1,30 @@
 [project]
 name = "yuren"
 version = "0.1.0"
-description = "Yuren is a open source Instruction-following LLM based on baichuan."
+description = "Yuren is a open source LLM based on LLAMA2."
 authors = [
     { name = "Pleisto Inc", email = "engineering@pleisto.com" }
 ]
 license = "Apache-2.0"
 dependencies = [
-    "transformers @ git+https://github.com/huggingface/transformers@main",
+    "transformers>=4.31.0",
     "sentencepiece>=0.1.99",
     "einops>=0.6.1",
     "protobuf==3.*",
     "bitsandbytes>=0.40.0.post4",
     "torch>=2.0.1",
-    "accelerate>=0.20.3",
+    "accelerate>=0.21.0",
     "setuptools>=68.0.0",
-    "scipy>=1.10.1",
+    "scipy>=1.11.1",
     "transformers_stream_generator>=0.0.4",
 ]
 readme = "README.md"
 requires-python = ">= 3.10"
+
+[project.optional-dependencies]
+cuda = [
+    "flash-attn>=2.0.0.post1",
+]
 
 [build-system]
 requires = ["hatchling"]
@@ -28,9 +33,9 @@ build-backend = "hatchling.build"
 [tool.rye]
 managed = true
 dev-dependencies = [
-    "ruff>=0.0.274",
+    "ruff>=0.0.280",
     "isort>=5.12.0",
-    "black>=23.3.0",
+    "black>=23.7.0"
 ]
 
 [tool.hatch.metadata]

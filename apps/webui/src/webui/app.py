@@ -281,7 +281,7 @@ with gr.Blocks(css=customCSS, theme=small_and_beautiful_theme) as demo:
         show_progress=True,
     )
 
-demo.title = "羽人-baichuan13b-chat"
+demo.title = "羽人-13b-chat"
 
 if __name__ == "__main__":
     reload_javascript()

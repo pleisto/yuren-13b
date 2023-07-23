@@ -6,7 +6,7 @@ authors = [
     { name = "NGB Office GPGPU Workstation#01", email = "gpgpu-1@corp.pleisto.com" }
 ]
 dependencies = [
-    "gradio>=3.36.1",
+    "gradio>=3.38.0",
     "mdtex2html>=1.2.0",
     "markdown>=3.4.3",
     "pygments>=2.15.1",
