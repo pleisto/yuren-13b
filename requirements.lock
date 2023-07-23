@@ -6,6 +6,7 @@
 #   features: []
 #   all-features: false
 
+-e file:tools/json2parquet
 -e file:tools/merge_lora
 -e file:tools/prepare_base_model
 -e file:apps/webui

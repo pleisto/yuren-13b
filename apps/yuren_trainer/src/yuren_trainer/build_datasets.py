@@ -38,10 +38,14 @@ class DataArguments:
     Arguments pertaining to what data we are going to input our model for training and eval.
     """
 
-    train_file: Optional[str] = field(default=None, metadata={"help": "The input training data file (a text file)."})
+    train_file: Optional[str] = field(
+        default=None, metadata={"help": "The input training data file (a text file)."}
+    )
     validation_file: Optional[str] = field(
         default=None,
-        metadata={"help": "An optional input evaluation data file to evaluate the perplexity on (a text file)."},
+        metadata={
+            "help": "An optional input evaluation data file to evaluate the perplexity on (a text file)."
+        },
     )
 
 
@@ -65,31 +69,21 @@ def build_dataset(
         A tuple of the training and validation datasets.
     """
     if not os.path.exists(filename) or not (filename.endswith((".json", ".parquet"))):
-        raise Exception(f"Dataset {filename} does not exist or is not in JSON or Parquet format.")
+        raise Exception(
+            f"Dataset {filename} does not exist or is a unsupported format."
+        )
 
-    if is_huge_dataset(filename) is False and filename.endswith(".json"):
-        dataset_loader = partial(load_dataset, "json")
-    else:
-        dataset_loader = partial(load_dataset, "parquet")
-        if filename.endswith(".json"):
-            # Since pyarrow has a bug when loading huge json files, we use chunking to convert the json file to dataset
-            # @see: https://issues.apache.org/jira/browse/ARROW-17137
-            original_filename = filename
-            filename = f"{filename}.parquet"
-            if os.path.exists(filename) is False:
-                df = pd.read_json(original_filename)
-                chunk_size = 500_000
-                table = pa.Table.from_batches(
-                    [pa.record_batch(df.iloc[i : i + chunk_size]) for i in range(0, len(df), chunk_size)]
-                )
-                pq.write_table(table, filename)
-
-            print(
-                "Warning: Since pyarrow has a bug when loading huge json files, we convert json to parquet with "
-                f"custom function.\n If you modify the json file, please delete the cached parquet file: {filename}"
-            )
-
-    data = dataset_loader(data_files=filename, cache_dir=cache_dir)["train"].shuffle()
+    if is_huge_dataset(filename) is True and filename.endswith(".json"):
+        raise Exception(
+            f"Dataset {filename} is too large. Pyarrow has a bug when loading huge json files.\n"
+            f"Please convert the json file to parquet with the following command:\n"
+            f"python -m json2parquet.main --input {filename}\n"
+            f"More details: https://issues.apache.org/jira/browse/ARROW-17137"
+        )
+    format = "json" if filename.endswith(".json") else "parquet"
+    data = load_dataset(format, data_files=filename, cache_dir=cache_dir)[
+        "train"
+    ].shuffle()
     example_processor = _tokenize_chatml if is_chatml else _batch_tokenize_texts
     data = data.map(
         partial(example_processor, tokenizer, model_max_length),
@@ -105,7 +99,9 @@ def build_dataset(
     return data
 
 
-def _tokenize_chatml(tokenizer: AutoTokenizer, max_len: int, example: Dict) -> Dict[str, List[int]]:
+def _tokenize_chatml(
+    tokenizer: AutoTokenizer, max_len: int, example: Dict
+) -> Dict[str, List[int]]:
     """
     Generates and tokenize the ChatML conversation.
 
@@ -128,7 +124,9 @@ def _tokenize_chatml(tokenizer: AutoTokenizer, max_len: int, example: Dict) -> D
             raise ValueError(f"Unknown sentence: {sentence}")
 
         if role == "system":
-            formatted_sentence = IM_START_TOKEN + role + "\n" + sentence["value"] + IM_END_TOKEN
+            formatted_sentence = (
+                IM_START_TOKEN + role + "\n" + sentence["value"] + IM_END_TOKEN
+            )
         elif role == "user":
             formatted_sentence = (
                 f"\n{IM_START_TOKEN}"
@@ -143,7 +141,11 @@ def _tokenize_chatml(tokenizer: AutoTokenizer, max_len: int, example: Dict) -> D
             formatted_sentence = sentence["value"] + IM_END_TOKEN
 
         encoded_sentence = tokenizer.encode(formatted_sentence)
-        label = copy.deepcopy(encoded_sentence) if role == "assistant" else [IGNORE_TOKEN_ID] * len(encoded_sentence)
+        label = (
+            copy.deepcopy(encoded_sentence)
+            if role == "assistant"
+            else [IGNORE_TOKEN_ID] * len(encoded_sentence)
+        )
         input_ids += encoded_sentence
         labels += label
 
@@ -168,7 +170,10 @@ def _tokenize_chatml(tokenizer: AutoTokenizer, max_len: int, example: Dict) -> D
 
 
 def _batch_tokenize_texts(
-    tokenizer: AutoTokenizer, max_len: int, examples: Dict[str, List[str]], overlap: int = 40
+    tokenizer: AutoTokenizer,
+    max_len: int,
+    examples: Dict[str, List[str]],
+    overlap: int = 40,
 ) -> Dict[str, List[List[int]]]:
     """
     Batch generates and tokenize the text.
@@ -208,7 +213,9 @@ def _batch_tokenize_texts(
 
     assert len(encoded_examples["input_ids"]) == len(encoded_examples["labels"])
 
-    def split_into_chunks(sequence: List[int], labels: List[int]) -> Tuple[List[List[int]], List[List[int]]]:
+    def split_into_chunks(
+        sequence: List[int], labels: List[int]
+    ) -> Tuple[List[List[int]], List[List[int]]]:
         """
         Splits a sequence into chunks of size max_len with an overlap.
         Drops the last chunk if it is smaller than max_len.
@@ -225,14 +232,21 @@ def _batch_tokenize_texts(
 
         # handle the rest of the chunks
         while start_index + max_len - overlap <= len(sequence):
-            chunks.append(sequence[start_index - overlap : start_index + max_len - overlap])
-            label_chunks.append([IGNORE_TOKEN_ID] * overlap + labels[start_index : start_index + max_len - overlap])
+            chunks.append(
+                sequence[start_index - overlap : start_index + max_len - overlap]
+            )
+            label_chunks.append(
+                [IGNORE_TOKEN_ID] * overlap
+                + labels[start_index : start_index + max_len - overlap]
+            )
 
             start_index += max_len - overlap
 
         return chunks, label_chunks
 
-    input_chunks, label_chunks = split_into_chunks(encoded_examples["input_ids"], encoded_examples["labels"])
+    input_chunks, label_chunks = split_into_chunks(
+        encoded_examples["input_ids"], encoded_examples["labels"]
+    )
 
     return {
         "input_ids": input_chunks,

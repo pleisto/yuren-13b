@@ -1,7 +1,7 @@
 [project]
-name = "merge-lora"
+name = "json2parquet"
 version = "0.1.0"
-description = "Merging LoRA weights back into base model."
+description = "Covert huge json dataset to parquet format to avoid bugs in pyarrow."
 dependencies = []
 readme = "README.md"
 requires-python = ">= 3.10"
@@ -12,6 +12,7 @@ build-backend = "hatchling.build"
 
 [tool.rye]
 managed = true
+dev-dependencies = []
 
 [tool.hatch.metadata]
 allow-direct-references = true
