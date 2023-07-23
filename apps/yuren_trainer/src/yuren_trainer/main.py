@@ -49,7 +49,7 @@ from transformers.utils import add_start_docstrings
 from yuren_core.constants import PAD_TOKEN
 from yuren_core.llama_flash_attn_monkey_patch import replace_llama_attn_with_flash_attn
 
-from .build_datasets import build_dataset, DataArguments
+from .build_datasets import DataArguments, build_dataset
 from .utils import TrainTask, create_logger, create_rank_0_printer, get_model_param_count
 
 # pytorch deadlock with multiple threads has compatibility issues with datasets' multi processing workers

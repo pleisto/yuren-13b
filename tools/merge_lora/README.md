@@ -1,3 +1,3 @@
 # merge-lora
 
-Merging LoRA weights back into base model
+Merging LoRA weights back into base model.
