@@ -1,5 +1,6 @@
 # python generated files
 __pycache__/
+cache/
 *.py[oc]
 build/
 dist/

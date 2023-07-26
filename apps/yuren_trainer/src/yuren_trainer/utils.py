@@ -22,6 +22,7 @@ import torch
 from deepspeed.runtime.engine import DeepSpeedEngine
 from transformers.deepspeed import is_deepspeed_zero3_enabled
 from transformers.utils import logging
+import numpy as np
 
 
 class TrainTask(Enum):
@@ -92,7 +93,9 @@ def get_ds_state_dict(ds_engine: DeepSpeedEngine):
     return state_dict
 
 
-def get_model_param_count(model: Union[DeepSpeedEngine, torch.nn.Module], trainable_only=False):
+def get_model_param_count(
+    model: Union[DeepSpeedEngine, torch.nn.Module], trainable_only=False
+):
     """
     Calculate model's total param count. If trainable_only is True then count only those requiring grads
     """
@@ -106,7 +109,9 @@ def get_model_param_count(model: Union[DeepSpeedEngine, torch.nn.Module], traina
         def numel(p):
             return p.numel()
 
-    return sum(numel(p) for p in model.parameters() if not trainable_only or p.requires_grad)
+    return sum(
+        numel(p) for p in model.parameters() if not trainable_only or p.requires_grad
+    )
 
 
 def is_huge_dataset(file_path):
@@ -120,3 +125,11 @@ def is_huge_dataset(file_path):
         return True
     else:
         return False
+
+
+def last_index_of_list(lst: list, target: object):
+    """
+    Find the last index of target in lst.
+    Same as rindex in Ruby.
+    """
+    return max(np.where(np.array(lst) == target)[0])
