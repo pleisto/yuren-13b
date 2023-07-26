@@ -30,9 +30,7 @@ tokenizer = LlamaTokenizer.from_pretrained(
     pad_token=PAD_TOKEN,
 )
 
-load_pt_dataset = partial(
-    preparing_dataset, False, model_max_length, "./cache", tokenizer
-)
+load_pt_dataset = partial(preparing_dataset, False, model_max_length, "./cache", tokenizer)
 pt_ds = load_pt_dataset("../../../data/pt.dev.json")
 
 # check chunk is correct
@@ -100,8 +98,6 @@ assert result == [
 ]
 
 
-load_sft_dataset = partial(
-    preparing_dataset, True, model_max_length, "./cache", tokenizer
-)
+load_sft_dataset = partial(preparing_dataset, True, model_max_length, "./cache", tokenizer)
 sft_ds = load_sft_dataset("../../../data/sft.dev.json")
 print("PASS")

@@ -19,9 +19,8 @@ from dataclasses import dataclass, field
 from functools import partial
 from typing import Dict, List, Optional
 
-from starlette.background import P
-
 from datasets import Dataset, load_dataset
+from starlette.background import P
 from transformers import AutoTokenizer
 from transformers.trainer_pt_utils import LabelSmoother
 from yuren_core.constants import IM_END_TOKEN, IM_START_TOKEN
@@ -38,14 +37,10 @@ class DataArguments:
     Arguments pertaining to what data we are going to input our model for training and eval.
     """
 
-    train_file: Optional[str] = field(
-        default=None, metadata={"help": "The input training data file (a text file)."}
-    )
+    train_file: Optional[str] = field(default=None, metadata={"help": "The input training data file (a text file)."})
     validation_file: Optional[str] = field(
         default=None,
-        metadata={
-            "help": "An optional input evaluation data file to evaluate the perplexity on (a text file)."
-        },
+        metadata={"help": "An optional input evaluation data file to evaluate the perplexity on (a text file)."},
     )
 
 
@@ -69,9 +64,7 @@ def preparing_dataset(
         A tuple of the training and validation datasets.
     """
     if not os.path.exists(filename) or not (filename.endswith((".json", ".parquet"))):
-        raise Exception(
-            f"Dataset {filename} does not exist or is a unsupported format."
-        )
+        raise Exception(f"Dataset {filename} does not exist or is a unsupported format.")
 
     if is_huge_dataset(filename) is True and filename.endswith(".json"):
         raise Exception(
@@ -81,9 +74,7 @@ def preparing_dataset(
             "More details: https://issues.apache.org/jira/browse/ARROW-17137"
         )
     format = "json" if filename.endswith(".json") else "parquet"
-    data = load_dataset(format, data_files=filename, cache_dir=cache_dir)[
-        "train"
-    ].shuffle()
+    data = load_dataset(format, data_files=filename, cache_dir=cache_dir)["train"].shuffle()
     example_processor = _tokenize_chatml if is_chatml else _batch_tokenize_texts
     data = data.map(
         partial(example_processor, tokenizer, model_max_length),
@@ -100,9 +91,7 @@ def preparing_dataset(
     return data
 
 
-def _tokenize_chatml(
-    tokenizer: AutoTokenizer, max_len: int, example: Dict
-) -> Dict[str, List[int]]:
+def _tokenize_chatml(tokenizer: AutoTokenizer, max_len: int, example: Dict) -> Dict[str, List[int]]:
     """
     Generates and tokenize the ChatML conversation.
 
@@ -125,9 +114,7 @@ def _tokenize_chatml(
             raise ValueError(f"Unknown sentence: {sentence}")
 
         if role == "system":
-            formatted_sentence = (
-                IM_START_TOKEN + role + "\n" + sentence["value"] + IM_END_TOKEN
-            )
+            formatted_sentence = IM_START_TOKEN + role + "\n" + sentence["value"] + IM_END_TOKEN
         elif role == "user":
             formatted_sentence = (
                 f"\n{IM_START_TOKEN}"
@@ -142,11 +129,7 @@ def _tokenize_chatml(
             formatted_sentence = sentence["value"] + IM_END_TOKEN
 
         encoded_sentence = tokenizer.encode(formatted_sentence)
-        label = (
-            copy.deepcopy(encoded_sentence)
-            if role == "assistant"
-            else [IGNORE_TOKEN_ID] * len(encoded_sentence)
-        )
+        label = copy.deepcopy(encoded_sentence) if role == "assistant" else [IGNORE_TOKEN_ID] * len(encoded_sentence)
         input_ids += encoded_sentence
         labels += label
 
@@ -202,9 +185,7 @@ def _batch_tokenize_texts(
     """
 
     # Set Default max_sliding_stride if not provided
-    max_sliding_stride = (
-        int(seq_len / 32) if max_sliding_stride == -1 else max_sliding_stride
-    )
+    max_sliding_stride = int(seq_len / 32) if max_sliding_stride == -1 else max_sliding_stride
 
     # example_buffer is used to temporarily store examples until it reaches max_len
     example_buffer = {

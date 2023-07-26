@@ -35,13 +35,13 @@ import torch
 from peft import LoraConfig, get_peft_model
 from transformers import (
     BitsAndBytesConfig,
+    DataCollatorForSeq2Seq,
     HfArgumentParser,
     LlamaForCausalLM,
     LlamaTokenizer,
     Trainer,
     TrainingArguments,
     set_seed,
-    DataCollatorForSeq2Seq,
 )
 from transformers.trainer_pt_utils import torch_distributed_zero_first
 from transformers.trainer_utils import get_last_checkpoint
@@ -50,12 +50,7 @@ from yuren_core.constants import PAD_TOKEN
 from yuren_core.llama_flash_attn_monkey_patch import replace_llama_attn_with_flash_attn
 
 from .preparing_datasets import DataArguments, preparing_dataset
-from .utils import (
-    TrainTask,
-    create_logger,
-    create_rank_0_printer,
-    get_model_param_count,
-)
+from .utils import TrainTask, create_logger, create_rank_0_printer, get_model_param_count
 
 # pytorch deadlock with multiple threads has compatibility issues with datasets' multi processing workers
 # @see https://github.com/pytorch/pytorch/issues/75147
@@ -76,9 +71,7 @@ class ModelArguments:
     )
     cache_dir: Optional[str] = field(
         default=None,
-        metadata={
-            "help": "Where do you want to store the pretrained models and datasets load from huggingface.co"
-        },
+        metadata={"help": "Where do you want to store the pretrained models and datasets load from huggingface.co"},
     )
 
 
@@ -95,9 +88,7 @@ class TrainingArguments(TrainingArguments):
         default=None,
         metadata={"help": "LoRA config file."},
     )
-    gradient_checkpointing: bool = field(
-        default=False, metadata={"help": "Whether to use gradient checkpointing."}
-    )
+    gradient_checkpointing: bool = field(default=False, metadata={"help": "Whether to use gradient checkpointing."})
     report_to: str = field(
         default="wandb",
         metadata={"help": "use wandb to log training process"},
@@ -113,9 +104,7 @@ class TrainingArguments(TrainingArguments):
     )
     use_nf4_training: bool = field(
         default=True,
-        metadata={
-            "help": "Whether to use nf4 training (QLora), only available when use_lora is True"
-        },
+        metadata={"help": "Whether to use nf4 training (QLora), only available when use_lora is True"},
     )
     deepspeed: str = field(
         default=None,
@@ -126,12 +115,8 @@ class TrainingArguments(TrainingArguments):
             )
         },
     )
-    ddp_find_unused_parameters: bool = field(
-        default=None, metadata={"help": "ddp_find_unused_parameters"}
-    )
-    train_task: TrainTask = field(
-        default=TrainTask.SUPERVISED_FINETUNE, metadata={"help": "train_task"}
-    )
+    ddp_find_unused_parameters: bool = field(default=None, metadata={"help": "ddp_find_unused_parameters"})
+    train_task: TrainTask = field(default=TrainTask.SUPERVISED_FINETUNE, metadata={"help": "train_task"})
 
 
 def enable_lora_training(
@@ -188,14 +173,14 @@ def enable_lora_training(
         r=lora_config["r"],
         lora_alpha=lora_config["lora_alpha"],
         target_modules=lora_config["lora_target_modules"],
-        lora_dropout=0.05
-        if training_args.train_task == TrainTask.SUPERVISED_FINETUNE.value
-        else 0.1,
+        lora_dropout=0.05 if training_args.train_task == TrainTask.SUPERVISED_FINETUNE.value else 0.1,
         bias="none",
         task_type="CAUSAL_LM",
-        modules_to_save=["embed_tokens"]
-        if training_args.train_task == TrainTask.EMBED_TOKEN_ONLY.value
-        else ["embed_tokens", "lm_head"],
+        modules_to_save=(
+            ["embed_tokens"]
+            if training_args.train_task == TrainTask.EMBED_TOKEN_ONLY.value
+            else ["embed_tokens", "lm_head"]
+        ),
     )
 
     model = get_peft_model(model, config)
@@ -240,9 +225,9 @@ def init_model_and_tokenizer(
         model_args.model_name_or_path,
         padding_side="right",
         pad_token=PAD_TOKEN,
-        model_max_length=training_args.model_max_length
-        if training_args.train_task == TrainTask.SUPERVISED_FINETUNE.value
-        else None,
+        model_max_length=(
+            training_args.model_max_length if training_args.train_task == TrainTask.SUPERVISED_FINETUNE.value else None
+        ),
     )
 
     n_gpus = torch.cuda.device_count()
@@ -250,9 +235,7 @@ def init_model_and_tokenizer(
     max_memory = {i: max_memory for i in range(n_gpus)}
 
     if training_args.use_lora:
-        model = enable_lora_training(
-            training_args, model_args, print_rank_0, ddp, max_memory
-        )
+        model = enable_lora_training(training_args, model_args, print_rank_0, ddp, max_memory)
 
     else:
         model = LlamaForCausalLM.from_pretrained(
@@ -289,9 +272,7 @@ def main():
     global_rank = torch.distributed.get_rank()
 
     # Setup logging
-    logger = create_logger(
-        __name__, training_args.get_process_log_level(), training_args.should_log
-    )
+    logger = create_logger(__name__, training_args.get_process_log_level(), training_args.should_log)
     print_rank_0 = create_rank_0_printer(global_rank, training_args.output_dir)
 
     # Log on each process the small summary:
@@ -303,20 +284,14 @@ def main():
 
     # Detecting last checkpoint.
     last_checkpoint = None
-    if (
-        os.path.isdir(training_args.output_dir)
-        and training_args.do_train
-        and not training_args.overwrite_output_dir
-    ):
+    if os.path.isdir(training_args.output_dir) and training_args.do_train and not training_args.overwrite_output_dir:
         last_checkpoint = get_last_checkpoint(training_args.output_dir)
         if last_checkpoint is None and len(os.listdir(training_args.output_dir)) > 0:
             raise ValueError(
                 f"Output directory ({training_args.output_dir}) already exists and is not empty. "
                 "Use --overwrite_output_dir to overcome."
             )
-        elif (
-            last_checkpoint is not None and training_args.resume_from_checkpoint is None
-        ):
+        elif last_checkpoint is not None and training_args.resume_from_checkpoint is None:
             logger.info(
                 f"Checkpoint detected, resuming training at {last_checkpoint}. To avoid this behavior, change "
                 "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
@@ -324,14 +299,10 @@ def main():
 
     # Set seed before initializing model.
     set_seed(training_args.seed)
-    model, tokenizer = init_model_and_tokenizer(
-        model_args, training_args, ddp, print_rank_0
-    )
+    model, tokenizer = init_model_and_tokenizer(model_args, training_args, ddp, print_rank_0)
 
     with torch_distributed_zero_first(global_rank):
-        is_chatml_dataset = (
-            training_args.train_task == TrainTask.SUPERVISED_FINETUNE.value
-        )
+        is_chatml_dataset = training_args.train_task == TrainTask.SUPERVISED_FINETUNE.value
         load_dataset = partial(
             preparing_dataset,
             is_chatml_dataset,
@@ -342,24 +313,18 @@ def main():
         train_data = load_dataset(data_args.train_file)
         val_data = load_dataset(data_args.validation_file)
 
-    print_rank_0(
-        f"Total training tokens: {sum(len(x) for x in train_data['input_ids']) / 1000_000}M"
-    )
+    print_rank_0(f"Total training tokens: {sum(len(x) for x in train_data['input_ids']) / 1000_000}M")
 
     training_nums = len(train_data)
     num_gpus = torch.cuda.device_count()
 
     batch_size = (
-        training_args.per_device_train_batch_size
-        * training_args.world_size
-        * training_args.gradient_accumulation_steps
+        training_args.per_device_train_batch_size * training_args.world_size * training_args.gradient_accumulation_steps
     )
     t_total = math.ceil(training_nums / batch_size) * training_args.num_train_epochs
 
     training_args.warmup_steps = (
-        int(t_total * training_args.warmup_ratio)
-        if training_args.warmup_ratio > 0.0
-        else training_args.warmup_steps
+        int(t_total * training_args.warmup_ratio) if training_args.warmup_ratio > 0.0 else training_args.warmup_steps
     )
     print_rank_0(
         "num_gpus = {}, training_nums = {}, t_total = {}, warmup_steps = {}, eval_steps = {}, save_steps = {}".format(
@@ -372,9 +337,7 @@ def main():
         )
     )
     print_rank_0(
-        "val data nums = {}, training_nums = {}, batch_size = {}".format(
-            len(val_data), training_nums, batch_size
-        )
+        "val data nums = {}, training_nums = {}, batch_size = {}".format(len(val_data), training_nums, batch_size)
     )
 
     trainer = Trainer(
@@ -394,14 +357,10 @@ def main():
     print_rank_0(f"Using {training_args.half_precision_backend} half precision backend")
     # Train!
     len_dataloader = len(trainer.get_train_dataloader())
-    num_update_steps_per_epoch = (
-        len_dataloader // training_args.gradient_accumulation_steps
-    )
+    num_update_steps_per_epoch = len_dataloader // training_args.gradient_accumulation_steps
 
     total_train_batch_size = (
-        training_args.train_batch_size
-        * training_args.gradient_accumulation_steps
-        * training_args.world_size
+        training_args.train_batch_size * training_args.gradient_accumulation_steps * training_args.world_size
     )
     num_examples = trainer.num_examples(trainer.get_train_dataloader())
     num_train_samples = num_examples * training_args.num_train_epochs
@@ -410,16 +369,10 @@ def main():
     print_rank_0(f"  Num examples = {num_examples}")
     print_rank_0(f"  Num train samples = {num_train_samples}")
     print_rank_0(f"  world_size = {world_size}")
-    print_rank_0(
-        f"  Total train batch size (w. parallel, distributed & accumulation) = {total_train_batch_size}"
-    )
-    print_rank_0(
-        f"  Gradient Accumulation steps = {training_args.gradient_accumulation_steps}"
-    )
+    print_rank_0(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_train_batch_size}")
+    print_rank_0(f"  Gradient Accumulation steps = {training_args.gradient_accumulation_steps}")
     print_rank_0(f"  Total optimization steps = {max_steps}")
-    print_rank_0(
-        f"  Number of trainable parameters = {get_model_param_count(model, trainable_only=True)}"
-    )
+    print_rank_0(f"  Number of trainable parameters = {get_model_param_count(model, trainable_only=True)}")
 
     # ref: https://discuss.huggingface.co/t/what-is-the-purpose-of-use-cache-in-decoder/958/3
     model.config.use_cache = False
@@ -427,9 +380,7 @@ def main():
     trainer.train(resume_from_checkpoint=None)
     trainer.save_model()  # https://github.com/huggingface/transformers/blob/main/src/transformers/trainer.py#L2808
 
-    print_rank_0(
-        "\n Training completed!!! If there's a warning about missing keys above, please disregard :)"
-    )
+    print_rank_0("\n Training completed!!! If there's a warning about missing keys above, please disregard :)")
 
 
 if __name__ == "__main__":

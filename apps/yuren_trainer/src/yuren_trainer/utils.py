@@ -18,11 +18,11 @@ import time
 from enum import Enum
 from typing import Union
 
+import numpy as np
 import torch
 from deepspeed.runtime.engine import DeepSpeedEngine
 from transformers.deepspeed import is_deepspeed_zero3_enabled
 from transformers.utils import logging
-import numpy as np
 
 
 class TrainTask(Enum):
@@ -93,9 +93,7 @@ def get_ds_state_dict(ds_engine: DeepSpeedEngine):
     return state_dict
 
 
-def get_model_param_count(
-    model: Union[DeepSpeedEngine, torch.nn.Module], trainable_only=False
-):
+def get_model_param_count(model: Union[DeepSpeedEngine, torch.nn.Module], trainable_only=False):
     """
     Calculate model's total param count. If trainable_only is True then count only those requiring grads
     """
@@ -109,9 +107,7 @@ def get_model_param_count(
         def numel(p):
             return p.numel()
 
-    return sum(
-        numel(p) for p in model.parameters() if not trainable_only or p.requires_grad
-    )
+    return sum(numel(p) for p in model.parameters() if not trainable_only or p.requires_grad)
 
 
 def is_huge_dataset(file_path):

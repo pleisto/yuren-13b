@@ -30,7 +30,7 @@ click==8.1.6
 contourpy==1.1.0
 cycler==0.11.0
 dataclasses-json==0.5.13
-datasets==2.13.1
+datasets==2.14.0
 deepspeed==0.10.0
 dill==0.3.6
 docker-pycreds==0.4.0
@@ -129,7 +129,7 @@ tzdata==2023.3
 uc-micro-py==1.0.2
 urllib3==1.26.16
 uvicorn==0.23.1
-wandb==0.15.5
+wandb==0.15.7
 websockets==11.0.3
 xxhash==3.2.0
 yarl==1.9.2
