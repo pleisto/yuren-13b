@@ -8,9 +8,9 @@ from transformers.models.llama.modeling_llama import apply_rotary_pos_emb
 # pyright: reportMissingImports=false
 try:
     from flash_attn.bert_padding import pad_input, unpad_input
-    from flash_attn.flash_attn_interface import (
-        flash_attn_varlen_qkvpacked_func,
-    )  # pip3 install "flash-attn>=2.0"
+    from flash_attn.flash_attn_interface import flash_attn_varlen_qkvpacked_func  # pip3 install "flash-attn>=2.0"
+
+    flash_attn_installed = True
 except ImportError:
     print("flash_attn2 not installed, this is optional but recommended for faster training.")
     flash_attn_installed = False

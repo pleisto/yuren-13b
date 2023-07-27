@@ -311,7 +311,7 @@ def main():
             tokenizer,
         )
         train_data = load_dataset(data_args.train_file)
-        val_data = load_dataset(data_args.validation_file)
+        val_data = load_dataset(data_args.validation_file) if data_args.validation_file else None
 
     print_rank_0(f"Total training tokens: {sum(len(x) for x in train_data['input_ids']) / 1000_000}M")
 
@@ -336,9 +336,8 @@ def main():
             training_args.save_steps,
         )
     )
-    print_rank_0(
-        "val data nums = {}, training_nums = {}, batch_size = {}".format(len(val_data), training_nums, batch_size)
-    )
+    val_nums = len(val_data) if val_data else 0
+    print_rank_0(f"val data nums = {val_nums}, training_nums = {training_nums}, batch_size = {batch_size}")
 
     trainer = Trainer(
         model=model,
@@ -350,7 +349,7 @@ def main():
             tokenizer,
             pad_to_multiple_of=8,
             return_tensors="pt",
-            padding=True,
+            padding="max_length",
             max_length=training_args.model_max_length,
         ),
     )

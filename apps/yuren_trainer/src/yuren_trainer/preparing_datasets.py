@@ -20,7 +20,6 @@ from functools import partial
 from typing import Dict, List, Optional
 
 from datasets import Dataset, load_dataset
-from starlette.background import P
 from transformers import AutoTokenizer
 from transformers.trainer_pt_utils import LabelSmoother
 from yuren_core.constants import IM_END_TOKEN, IM_START_TOKEN
@@ -290,10 +289,5 @@ def _batch_tokenize_texts(
             example_buffer["labels"][:seq_len],
         )
         example_buffer = sliding_example_buffer(example_buffer)
-
-    # Do not drop last incomplete sequence, because we may have proc_num incomplete sequences.
-    # Let's padding them in data collator.
-    if len(example_buffer["input_ids"]) > 0:
-        add_to_tokenized_dataset(example_buffer["input_ids"], example_buffer["labels"])
 
     return tokenized_dataset

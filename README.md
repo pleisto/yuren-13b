@@ -93,16 +93,7 @@ python -m prepare_base_model
 ### Embedding 预训练
 
 ```bash
-torchrun --nproc_per_node=8 -m yuren_trainer.main --train_task 'embed_token' \
-  --model_name_or_path "dist/llama2-13b-hf-han-tokenizer" --train_file 'train.embed.json' \
-  --validation_file 'validation.embed.json' --model_max_length 4096 \
-  --num_train_epochs 1 --per_device_eval_batch_size 4 --per_device_train_batch_size 4 \
-  --gradient_accumulation_steps 4 --evaluation_strategy "steps" --eval_steps 512 \
-  --save_strategy "steps" --save_steps 340 --save_total_limit 8 --learning_rate 2e-5 \
-  --weight_decay 0. --lr_scheduler_type "cosine" --logging_steps 10 \
-  --run_name yuren-13b-stage1 --warmup_ratio 0.03 \
-  --dataloader_drop_last True --group_by_length True --tf32 True --bf16 True \
-  --deepspeed "apps/yuren_trainer/config/deepspeed_config.json" --output_dir "dist/yuren-13b-embed"
+torchrun --nproc_per_node=8 -m yuren_trainer --train_task 'embed_token' --model_name_or_path "dist/llama2-13b-hf-han-tokenizer" --train_file 'data/yuren-13b-embed_token.train.parquet' --model_max_length 1024   --num_train_epochs 1 --per_device_eval_batch_size 16 --per_device_train_batch_size 16   --gradient_accumulation_steps 1 --evaluation_strategy "steps" --eval_steps 512   --save_strategy "steps" --save_steps 340 --save_total_limit 4 --learning_rate 2e-5   --weight_decay 0. --lr_scheduler_type "cosine" --logging_steps 10   --run_name yuren-13b-embed --warmup_ratio 0.03   --dataloader_drop_last True --group_by_length True --tf32 True --bf16 True  --deepspeed "apps/yuren_trainer/config/deepspeed_config.json" --output_dir "dist/yuren-13b-embed"  --gradient_checkpointing True
 ```
 
 ### 持续训练（PT）
