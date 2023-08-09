@@ -90,30 +90,55 @@ python -m prepare_base_model
 
 (注:词表大小会被扩充至最接近的 128 的倍数以改善并行训练时的性能)
 
+### 数据集预处理
+
+> Tips: 可以在本地完成数据集的预处理后再上传至服务器进行训练以节省成本。
+
+如果未指定验证集，则默认将从训练集中划分 1% 作为验证集。
+
+#### Embedding 预训练 或 持续训练（PT）
+
+```bash
+python -m prepare_dataset --train_file "data/pt.dev.json" --type "text"
+```
+
+#### SFT 训练
+
+```bash
+python -m prepare_dataset --train_file "data/sft.dev.json" --type "chatml"
+```
+
+#### 完整示例
+
+```bash
+python -m prepare_dataset --train_file "/mnt/nfs/yuren13b/train-pt.parquet" --validation_file "/mnt/nfs/yuren13b/validation-pt.parquet" --type "text" --model_max_length 2048 --tokenizer_name "./dist/llama2-13b-hf-han-tokenizer" --output_dir "/mnt/nfs/yuren13b/pt-ds"
+```
+
+> 下述脚本均适用于 8 卡 A100 80G 或 H800 环境, 如需在其他环境下运行请酌情调整相关参数。
+
 ### Embedding 预训练
 
 ```bash
-torchrun --nproc_per_node=8 -m yuren_trainer --train_task 'embed_token' --model_name_or_path "dist/llama2-13b-hf-han-tokenizer" --train_file 'data/yuren-13b-embed_token.train.parquet' --model_max_length 1024   --num_train_epochs 1 --per_device_eval_batch_size 16 --per_device_train_batch_size 16   --gradient_accumulation_steps 1 --evaluation_strategy "steps" --eval_steps 512   --save_strategy "steps" --save_steps 340 --save_total_limit 4 --learning_rate 2e-5   --weight_decay 0. --lr_scheduler_type "cosine" --logging_steps 10   --run_name yuren-13b-embed --warmup_ratio 0.03   --dataloader_drop_last True --group_by_length True --tf32 True --bf16 True  --deepspeed "apps/yuren_trainer/config/deepspeed_config.json" --output_dir "dist/yuren-13b-embed"  --gradient_checkpointing True
+torchrun --nproc_per_node=8 -m yuren_trainer --train_task 'embed_token' --model_name_or_path "dist/llama2-13b-hf-han-tokenizer" --dataset 'data/ds_embed_token_1024' --model_max_length 1024   --num_train_epochs 1 --per_device_eval_batch_size 16 --per_device_train_batch_size 16   --gradient_accumulation_steps 1 --evaluation_strategy "steps" --eval_steps 512   --save_strategy "steps" --save_steps 340 --save_total_limit 4 --learning_rate 2e-5   --weight_decay 0. --lr_scheduler_type "cosine" --logging_steps 10   --run_name yuren-13b-embed --warmup_ratio 0.03   --dataloader_drop_last True --group_by_length True --tf32 True --bf16 True  --deepspeed "apps/yuren_trainer/config/deepspeed_config.json" --output_dir "dist/yuren-13b-embed"  --gradient_checkpointing True --save_safetensors True
 ```
 
 ### 持续训练（PT）
 
 ```bash
 torchrun --nproc_per_node=8 -m yuren_trainer.main --train_task 'pt' \
-  --model_name_or_path "dist/yuren-13b-embed" --train_file 'train.pt.json' \
-  --validation_file 'validation.pt.json' --model_max_length 4096 \
+  --model_name_or_path "dist/yuren-13b-pt1" --optim paged_lion_8bit \
+  --adam_beta1 0.95 --adam_beta2 0.98 --model_max_length 2048  --dataset 'data/ds_pt_2048' \
   --num_train_epochs 1 --per_device_eval_batch_size 4 --per_device_train_batch_size 4 \
-  --gradient_accumulation_steps 4 --evaluation_strategy "steps" --eval_steps 1024 \
-  --save_strategy "steps" --save_steps 340 --save_total_limit 8 --learning_rate 2e-4 \
-  --weight_decay 0 --lr_scheduler_type "constant" --logging_steps 4 --tf32 True --bf16 True \
-  --run_name yuren-13b-qlora-stage1 --warmup_ratio 0.03 --gradient_checkpointing True \
-  --dataloader_drop_last True --group_by_length True --max_grad_norm 0.3 --use_nf4_training True \
-  --use_lora True --lora_config "apps/yuren_trainer/config/qlora.json" --output_dir "dist/yuren-13b-base"
+  --gradient_accumulation_steps 8 --evaluation_strategy "steps" --eval_steps 1024 \
+  --save_strategy "steps" --save_steps 1024 --save_total_limit 8 --learning_rate 9e-6 \
+  --weight_decay 2e-6 --lr_scheduler_type "constant" --logging_steps 4 --bf16 True \
+  --run_name yuren-13b-stage1 --warmup_steps 100 --gradient_checkpointing True --fp16_full_eval True \
+  --dataloader_drop_last True --group_by_length True --max_grad_norm 0.3 --dataloader_num_workers 8 \
+  --deepspeed "apps/yuren_trainer/config/deepspeed_config.json" --output_dir "dist/yuren-13b-base" \
+  --save_safetensors True
 ```
 
 ### SFT 训练
-
-> 下述脚本均适用于 8 卡 A100 80G 环境, 如需在其他环境下运行请酌情调整相关参数。
 
 初始化环境:
 
@@ -127,15 +152,16 @@ wandb login # 登录 wandb 以便于记录训练日志
 
 ```bash
 torchrun --nproc_per_node=8 -m yuren_trainer.main --train_task 'sft' \
-  --model_name_or_path "dist/yuren-13b-base" --train_file 'train.sft.json' \
-  --validation_file 'validation.sft.json' --model_max_length 4096 \
+  --model_name_or_path "dist/yuren-13b-base" --optim paged_lion_8bit  \
+  --adam_beta1 0.95 --adam_beta2 0.98 --model_max_length 4096  --dataset 'data/ds_sft_4096' \
   --num_train_epochs 3 --per_device_eval_batch_size 4 --per_device_train_batch_size 4 \
   --gradient_accumulation_steps 4 --evaluation_strategy "steps" --eval_steps 512 \
   --save_strategy "steps" --save_steps 340 --save_total_limit 8 --learning_rate 2e-5 \
   --weight_decay 0. --lr_scheduler_type "cosine" --logging_steps 10 \
   --run_name yuren-13b-stage1 --warmup_ratio 0.03 \
-  --dataloader_drop_last True --group_by_length True --tf32 True --bf16 True \
-  --deepspeed "apps/yuren_trainer/config/deepspeed_config.json" --output_dir "dist/yuren-13b-stage1"
+  --dataloader_drop_last True --group_by_length True --bf16 True \
+  --deepspeed "apps/yuren_trainer/config/deepspeed_config.json" --output_dir "dist/yuren-13b-sft1" \
+  --save_safetensors True
 ```
 
 #### QLora
@@ -147,7 +173,7 @@ torchrun --nproc_per_node=8 -m yuren_trainer.main --train_task 'sft' \
   --num_train_epochs 3 --per_device_eval_batch_size 4 --per_device_train_batch_size 4 \
   --gradient_accumulation_steps 4 --evaluation_strategy "steps" --eval_steps 1024 \
   --save_strategy "steps" --save_steps 340 --save_total_limit 8 --learning_rate 2e-4 \
-  --weight_decay 0 --lr_scheduler_type "constant" --logging_steps 4 --tf32 True --bf16 True \
+  --weight_decay 0 --lr_scheduler_type "constant" --logging_steps 4 --bf16 True \
   --run_name yuren-13b-qlora-stage1 --warmup_ratio 0.03 --gradient_checkpointing True \
   --dataloader_drop_last True --group_by_length True --max_grad_norm 0.3 --use_nf4_training True \
   --use_lora True --lora_config "apps/yuren_trainer/config/qlora.json" --output_dir "dist/yuren-13b-stage1"

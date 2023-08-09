@@ -18,7 +18,6 @@ import time
 from enum import Enum
 from typing import Union
 
-import numpy as np
 import torch
 from deepspeed.runtime.engine import DeepSpeedEngine
 from transformers.deepspeed import is_deepspeed_zero3_enabled
@@ -108,24 +107,3 @@ def get_model_param_count(model: Union[DeepSpeedEngine, torch.nn.Module], traina
             return p.numel()
 
     return sum(numel(p) for p in model.parameters() if not trainable_only or p.requires_grad)
-
-
-def is_huge_dataset(file_path):
-    """
-    Check if the dataset is larger than 2GB.
-    """
-    file_size = os.stat(file_path).st_size
-
-    # Check if file is larger than 2GB
-    if file_size > 2 * 1024 * 1024 * 1024:
-        return True
-    else:
-        return False
-
-
-def last_index_of_list(lst: list, target: object):
-    """
-    Find the last index of target in lst.
-    Same as rindex in Ruby.
-    """
-    return max(np.where(np.array(lst) == target)[0])

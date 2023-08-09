@@ -1,13 +1,8 @@
 [project]
-name = "yuren-trainer"
+name = "prepare-dataset"
 version = "0.1.0"
-description = "Add a short description here"
-dependencies = [
-    "peft @ git+https://github.com/huggingface/peft",
-    "datasets>=2.14.4",
-    "wandb>=0.15.8",
-    "deepspeed>=0.10.0",
-]
+description = "Add your description here"
+dependencies = []
 readme = "README.md"
 requires-python = ">= 3.10"
 
@@ -17,6 +12,7 @@ build-backend = "hatchling.build"
 
 [tool.rye]
 managed = true
+dev-dependencies = []
 
 [tool.hatch.metadata]
 allow-direct-references = true

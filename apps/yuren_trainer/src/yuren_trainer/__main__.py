@@ -28,10 +28,10 @@ import json
 import math
 import os
 from dataclasses import dataclass, field
-from functools import partial
 from typing import Optional
 
 import torch
+from datasets import load_from_disk
 from peft import LoraConfig, get_peft_model
 from transformers import (
     BitsAndBytesConfig,
@@ -49,14 +49,7 @@ from transformers.utils import add_start_docstrings
 from yuren_core.constants import PAD_TOKEN
 from yuren_core.llama_flash_attn_monkey_patch import replace_llama_attn_with_flash_attn
 
-from .preparing_datasets import DataArguments, preparing_dataset
 from .utils import TrainTask, create_logger, create_rank_0_printer, get_model_param_count
-
-# pytorch deadlock with multiple threads has compatibility issues with datasets' multi processing workers
-# @see https://github.com/pytorch/pytorch/issues/75147
-# Do not move this statement to `__main__` function since it needs to be called in each process and sub-process
-torch.set_num_threads(1)
-torch.set_num_interop_threads(1)
 
 
 @dataclass
@@ -73,6 +66,15 @@ class ModelArguments:
         default=None,
         metadata={"help": "Where do you want to store the pretrained models and datasets load from huggingface.co"},
     )
+
+
+@dataclass
+class DataArguments:
+    """
+    Arguments pertaining to what data we are going to input our model for training and eval.
+    """
+
+    dataset: str = field(default=None, metadata={"help": "The prepared dataset path."})
 
 
 @dataclass
@@ -183,18 +185,15 @@ def enable_lora_training(
         ),
     )
 
+    # Prepares the model for gradient checkpointing if necessary
+
+    def make_inputs_require_grad(_module, _input, output):
+        output.requires_grad_(True)
+
+    print_rank_0("make_inputs_require_grad is patched")
+    model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
+
     model = get_peft_model(model, config)
-    if training_args.gradient_checkpointing:
-        # Prepares the model for gradient checkpointing if necessary
-        if hasattr(model, "enable_input_require_grads"):
-            model.enable_input_require_grads()
-        else:
-
-            def make_inputs_require_grad(_module, _input, output):
-                output.requires_grad_(True)
-
-            model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
-
     trainable_params, all_param = model.get_nb_trainable_parameters()
     print_rank_0(
         f"trainable params: {trainable_params:,d} || all params: {all_param:,d} || trainable%: {100 * trainable_params / all_param}"  # noqa: E501
@@ -241,7 +240,7 @@ def init_model_and_tokenizer(
         model = LlamaForCausalLM.from_pretrained(
             model_args.model_name_or_path,
             cache_dir=model_args.cache_dir,
-            torch_dtype=torch.bfloat16,
+            torch_dtype="auto",
             max_memory=max_memory,
         )
 
@@ -302,20 +301,15 @@ def main():
     model, tokenizer = init_model_and_tokenizer(model_args, training_args, ddp, print_rank_0)
 
     with torch_distributed_zero_first(global_rank):
-        is_chatml_dataset = training_args.train_task == TrainTask.SUPERVISED_FINETUNE.value
-        load_dataset = partial(
-            preparing_dataset,
-            is_chatml_dataset,
-            training_args.model_max_length,
-            model_args.cache_dir,
-            tokenizer,
-        )
-        train_data = load_dataset(data_args.train_file)
-        val_data = load_dataset(data_args.validation_file) if data_args.validation_file else None
+        datasets = load_from_disk(data_args.dataset)
+        training_nums = len(datasets["train"])
+        val_nums = len(datasets["validation"])
+        if training_args.train_task != TrainTask.SUPERVISED_FINETUNE.value:
+            assert training_args.model_max_length == len(
+                datasets["train"][0]["input_ids"]
+            ), f"Dataset sequence length should be equal to model_max_length, but got {len(datasets['train'][0]['input_ids'])} != {training_args.model_max_length}"  # noqa: E501
+            print_rank_0(f"Total training tokens: {training_nums * training_args.model_max_length / 1000_000}M")
 
-    print_rank_0(f"Total training tokens: {sum(len(x) for x in train_data['input_ids']) / 1000_000}M")
-
-    training_nums = len(train_data)
     num_gpus = torch.cuda.device_count()
 
     batch_size = (
@@ -336,15 +330,14 @@ def main():
             training_args.save_steps,
         )
     )
-    val_nums = len(val_data) if val_data else 0
     print_rank_0(f"val data nums = {val_nums}, training_nums = {training_nums}, batch_size = {batch_size}")
 
     trainer = Trainer(
         model=model,
         tokenizer=tokenizer,
         args=training_args,
-        train_dataset=train_data,
-        eval_dataset=val_data,
+        train_dataset=datasets["train"],
+        eval_dataset=datasets["validation"],
         data_collator=DataCollatorForSeq2Seq(
             tokenizer,
             pad_to_multiple_of=8,

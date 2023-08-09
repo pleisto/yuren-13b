@@ -13,34 +13,56 @@
  See the License for the specific language governing permissions and
  limitations under the License.
  """
+import argparse
 import copy
 import os
-from dataclasses import dataclass, field
 from functools import partial
-from typing import Dict, List, Optional
+from typing import Dict, List
 
-from datasets import Dataset, load_dataset
+from datasets import Dataset, DatasetDict, load_dataset
 from transformers import AutoTokenizer
 from transformers.trainer_pt_utils import LabelSmoother
-from yuren_core.constants import IM_END_TOKEN, IM_START_TOKEN
+from yuren_core.constants import IM_END_TOKEN, IM_START_TOKEN, PAD_TOKEN
+from yuren_core.utils import last_index_of_list
 
-from .utils import is_huge_dataset, last_index_of_list
+arg_parser = argparse.ArgumentParser()
+arg_parser.add_argument("--train_file", type=str, required=True)
+arg_parser.add_argument("--validation_file", type=str, default=None)
+arg_parser.add_argument("--type", choices=["text", "chatml"], required=True)
+arg_parser.add_argument("--tokenizer_path", type=str, default="./data/llama2-han-tokenizer/dist")
+arg_parser.add_argument("--output_path", type=str, default=None)
+arg_parser.add_argument("--model_max_length", type=int, default=4096)
+arg_parser.add_argument("--cache_dir", type=str, default="/tmp")
+args = arg_parser.parse_args()
 
 IGNORE_TOKEN_ID = LabelSmoother.ignore_index
-PROC_NUM = 8
+PROC_NUM = 10
 
 
-@dataclass
-class DataArguments:
-    """
-    Arguments pertaining to what data we are going to input our model for training and eval.
-    """
-
-    train_file: Optional[str] = field(default=None, metadata={"help": "The input training data file (a text file)."})
-    validation_file: Optional[str] = field(
-        default=None,
-        metadata={"help": "An optional input evaluation data file to evaluate the perplexity on (a text file)."},
+def main():
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
+    load_dataset = partial(
+        preparing_dataset,
+        args.type == "chatml",
+        args.model_max_length,
+        args.cache_dir,
+        tokenizer,
     )
+    train_dataset = load_dataset(args.train_file)
+    val_dataset = load_dataset(args.validation_file) if args.validation_file else None
+    if val_dataset is None:
+        print("WARNING: No validation dataset provided. Using 1% of training dataset.")
+        ds = train_dataset.train_test_split(0.01)
+        ds["validation"] = ds.pop("test")
+    else:
+        ds = DatasetDict({"train": train_dataset, "validation": val_dataset})
+
+    # extra_filename for path without extension
+    output_path = (
+        args.output_path or f"./dist/ds_{args.train_file.split('/')[-1].split('.')[0]}_{args.model_max_length}"
+    )
+    ds.save_to_disk(output_path, num_proc=PROC_NUM, max_shard_size="2GB")
+    print(f"Saved dataset to {output_path}")
 
 
 def preparing_dataset(
@@ -65,13 +87,6 @@ def preparing_dataset(
     if not os.path.exists(filename) or not (filename.endswith((".json", ".parquet"))):
         raise Exception(f"Dataset {filename} does not exist or is a unsupported format.")
 
-    if is_huge_dataset(filename) is True and filename.endswith(".json"):
-        raise Exception(
-            f"Dataset {filename} is too large. Pyarrow has a bug when loading huge json files.\n"
-            "Please convert the json file to parquet with the following command:\n"
-            f"python -m json2parquet.main --input {filename}\n"
-            "More details: https://issues.apache.org/jira/browse/ARROW-17137"
-        )
     format = "json" if filename.endswith(".json") else "parquet"
     data = load_dataset(format, data_files=filename, cache_dir=cache_dir)["train"].shuffle()
     example_processor = _tokenize_chatml if is_chatml else _batch_tokenize_texts
@@ -202,6 +217,7 @@ def _batch_tokenize_texts(
     def tokenize_example(context, completion):
         """Tokenizes context and completion, adds bos token, and returns input ids and labels."""
         # use pad_token to separate context and completion
+        tokenizer.pad_token_id = tokenizer.convert_tokens_to_ids(PAD_TOKEN)
         input_ids = tokenizer.encode(
             f"{context if context else ''}{tokenizer.pad_token}{completion}",
             add_special_tokens=False,
@@ -291,3 +307,7 @@ def _batch_tokenize_texts(
         example_buffer = sliding_example_buffer(example_buffer)
 
     return tokenized_dataset
+
+
+if __name__ == "__main__":
+    main()

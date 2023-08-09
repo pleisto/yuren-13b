@@ -16,7 +16,6 @@
 
 from functools import partial
 
-from starlette.background import P
 from transformers import LlamaTokenizer
 from transformers.trainer_pt_utils import LabelSmoother
 from yuren_core.constants import PAD_TOKEN
@@ -31,7 +30,14 @@ tokenizer = LlamaTokenizer.from_pretrained(
 )
 
 load_pt_dataset = partial(preparing_dataset, False, model_max_length, "./cache", tokenizer)
-pt_ds = load_pt_dataset("../../../data/pt.dev.json")
+pt_ds = load_pt_dataset("/Users/ding/Projects/yuren-13b-ds/data/pt/pt.base.parquet")
+
+
+def count_tokens(batch):
+    return {"num_tokens": len(batch["input_ids"])}
+
+
+xpt = pt_ds.map(count_tokens, num_proc=8)
 
 # check chunk is correct
 assert len(pt_ds["input_ids"][0]) == model_max_length
