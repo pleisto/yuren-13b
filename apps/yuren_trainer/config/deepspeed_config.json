@@ -10,7 +10,6 @@
       "adam_w_mode": true
     }
   },
-  "zero_allow_untested_optimizer": true,
   "scheduler": {
     "type": "WarmupDecayLR",
     "params": {
@@ -39,7 +38,9 @@
   "zero_optimization": {
     "stage": 2,
     "sub_group_size": 1e9,
-    "reduce_bucket_size": "auto",
+    "allgather_partitions": true,
+    "allgather_bucket_size": 2e8,
+    "reduce_bucket_size": 2e8,
     "reduce_scatter": true,
     "round_robin_gradients": true,
     "contiguous_gradients": true,

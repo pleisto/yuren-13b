@@ -43,13 +43,12 @@ from transformers import (
     TrainingArguments,
     set_seed,
 )
-from transformers.trainer_pt_utils import torch_distributed_zero_first
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import add_start_docstrings
 from yuren_core.constants import PAD_TOKEN
 from yuren_core.llama_flash_attn_monkey_patch import replace_llama_attn_with_flash_attn
 
-from .utils import TrainTask, create_logger, create_rank_0_printer, get_model_param_count
+from .utils import TrainTask, create_logger, create_rank_0_printer
 
 
 @dataclass
@@ -240,7 +239,7 @@ def init_model_and_tokenizer(
         model = LlamaForCausalLM.from_pretrained(
             model_args.model_name_or_path,
             cache_dir=model_args.cache_dir,
-            torch_dtype="auto",
+            torch_dtype=torch.bfloat16,
             max_memory=max_memory,
         )
 
@@ -300,15 +299,14 @@ def main():
     set_seed(training_args.seed)
     model, tokenizer = init_model_and_tokenizer(model_args, training_args, ddp, print_rank_0)
 
-    with torch_distributed_zero_first(global_rank):
+    with training_args.main_process_first():
         datasets = load_from_disk(data_args.dataset)
         training_nums = len(datasets["train"])
         val_nums = len(datasets["validation"])
-        if training_args.train_task != TrainTask.SUPERVISED_FINETUNE.value:
-            assert training_args.model_max_length == len(
-                datasets["train"][0]["input_ids"]
-            ), f"Dataset sequence length should be equal to model_max_length, but got {len(datasets['train'][0]['input_ids'])} != {training_args.model_max_length}"  # noqa: E501
-            print_rank_0(f"Total training tokens: {training_nums * training_args.model_max_length / 1000_000}M")
+        assert training_args.model_max_length == len(
+            datasets["train"][0]["input_ids"]
+        ), f"Dataset sequence length should be equal to model_max_length, but got {len(datasets['train'][0]['input_ids'])} != {training_args.model_max_length}"  # noqa: E501
+        print_rank_0(f"Total training tokens: {training_nums * training_args.model_max_length / 1000_000}M")
 
     num_gpus = torch.cuda.device_count()
 
@@ -347,24 +345,6 @@ def main():
         ),
     )
     print_rank_0(f"Using {training_args.half_precision_backend} half precision backend")
-    # Train!
-    len_dataloader = len(trainer.get_train_dataloader())
-    num_update_steps_per_epoch = len_dataloader // training_args.gradient_accumulation_steps
-
-    total_train_batch_size = (
-        training_args.train_batch_size * training_args.gradient_accumulation_steps * training_args.world_size
-    )
-    num_examples = trainer.num_examples(trainer.get_train_dataloader())
-    num_train_samples = num_examples * training_args.num_train_epochs
-    max_steps = math.ceil(training_args.num_train_epochs * num_update_steps_per_epoch)
-    print_rank_0("***** Running training *****")
-    print_rank_0(f"  Num examples = {num_examples}")
-    print_rank_0(f"  Num train samples = {num_train_samples}")
-    print_rank_0(f"  world_size = {world_size}")
-    print_rank_0(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_train_batch_size}")
-    print_rank_0(f"  Gradient Accumulation steps = {training_args.gradient_accumulation_steps}")
-    print_rank_0(f"  Total optimization steps = {max_steps}")
-    print_rank_0(f"  Number of trainable parameters = {get_model_param_count(model, trainable_only=True)}")
 
     # ref: https://discuss.huggingface.co/t/what-is-the-purpose-of-use-cache-in-decoder/958/3
     model.config.use_cache = False

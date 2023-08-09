@@ -119,23 +119,22 @@ python -m prepare_dataset --train_file "/mnt/nfs/yuren13b/train-pt.parquet" --va
 ### Embedding 预训练
 
 ```bash
-torchrun --nproc_per_node=8 -m yuren_trainer --train_task 'embed_token' --model_name_or_path "dist/llama2-13b-hf-han-tokenizer" --dataset 'data/ds_embed_token_1024' --model_max_length 1024   --num_train_epochs 1 --per_device_eval_batch_size 16 --per_device_train_batch_size 16   --gradient_accumulation_steps 1 --evaluation_strategy "steps" --eval_steps 512   --save_strategy "steps" --save_steps 340 --save_total_limit 4 --learning_rate 2e-5   --weight_decay 0. --lr_scheduler_type "cosine" --logging_steps 10   --run_name yuren-13b-embed --warmup_ratio 0.03   --dataloader_drop_last True --group_by_length True --tf32 True --bf16 True  --deepspeed "apps/yuren_trainer/config/deepspeed_config.json" --output_dir "dist/yuren-13b-embed"  --gradient_checkpointing True --save_safetensors True
+torchrun --nproc_per_node=8 -m yuren_trainer --train_task 'embed_token' --model_name_or_path "dist/llama2-13b-hf-han-tokenizer" --dataset 'data/ds_embed_token_1024' --model_max_length 1024   --num_train_epochs 1 --per_device_eval_batch_size 16 --per_device_train_batch_size 16   --gradient_accumulation_steps 1 --evaluation_strategy "steps" --eval_steps 512   --save_strategy "steps" --save_steps 340 --save_total_limit 4 --learning_rate 2e-5   --weight_decay 0. --lr_scheduler_type "cosine" --logging_steps 10   --run_name yuren-13b-embed --warmup_ratio 0.03  --tf32 True --bf16 True  --deepspeed "apps/yuren_trainer/config/deepspeed_config.json" --output_dir "dist/yuren-13b-embed"  --gradient_checkpointing True --save_safetensors True
 ```
 
 ### 持续训练（PT）
 
 ```bash
-torchrun --nproc_per_node=8 -m yuren_trainer.main --train_task 'pt' \
-  --model_name_or_path "dist/yuren-13b-pt1" --optim paged_lion_8bit \
-  --adam_beta1 0.95 --adam_beta2 0.98 --model_max_length 2048  --dataset 'data/ds_pt_2048' \
+torchrun --nproc_per_node=8 -m yuren_trainer --train_task 'pt' \
+  --model_name_or_path "dist/yuren-13b-embed" --model_max_length 2048  --dataset 'data/ds_pt_2048' \
   --num_train_epochs 1 --per_device_eval_batch_size 4 --per_device_train_batch_size 4 \
   --gradient_accumulation_steps 8 --evaluation_strategy "steps" --eval_steps 1024 \
-  --save_strategy "steps" --save_steps 1024 --save_total_limit 8 --learning_rate 9e-6 \
+  --save_strategy "steps" --save_steps 1024 --save_total_limit 8 --learning_rate 3e-5 \
   --weight_decay 2e-6 --lr_scheduler_type "constant" --logging_steps 4 --bf16 True \
   --run_name yuren-13b-stage1 --warmup_steps 100 --gradient_checkpointing True --fp16_full_eval True \
-  --dataloader_drop_last True --group_by_length True --max_grad_norm 0.3 --dataloader_num_workers 8 \
+  --max_grad_norm 0.3 --save_safetensors True \
   --deepspeed "apps/yuren_trainer/config/deepspeed_config.json" --output_dir "dist/yuren-13b-base" \
-  --save_safetensors True
+
 ```
 
 ### SFT 训练
@@ -151,12 +150,11 @@ wandb login # 登录 wandb 以便于记录训练日志
 #### 全量微调
 
 ```bash
-torchrun --nproc_per_node=8 -m yuren_trainer.main --train_task 'sft' \
-  --model_name_or_path "dist/yuren-13b-base" --optim paged_lion_8bit  \
-  --adam_beta1 0.95 --adam_beta2 0.98 --model_max_length 4096  --dataset 'data/ds_sft_4096' \
+torchrun --nproc_per_node=8 -m yuren_trainer --train_task 'sft' \
+  --model_name_or_path "dist/yuren-13b-base" --model_max_length 2048  --dataset 'data/ds_sft_2048' \
   --num_train_epochs 3 --per_device_eval_batch_size 4 --per_device_train_batch_size 4 \
   --gradient_accumulation_steps 4 --evaluation_strategy "steps" --eval_steps 512 \
-  --save_strategy "steps" --save_steps 340 --save_total_limit 8 --learning_rate 2e-5 \
+  --save_strategy "steps" --save_steps 340 --save_total_limit 8 --learning_rate 3e-5 \
   --weight_decay 0. --lr_scheduler_type "cosine" --logging_steps 10 \
   --run_name yuren-13b-stage1 --warmup_ratio 0.03 \
   --dataloader_drop_last True --group_by_length True --bf16 True \
