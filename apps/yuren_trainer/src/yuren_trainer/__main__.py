@@ -33,9 +33,11 @@ from typing import Optional
 import torch
 from datasets import load_from_disk
 from peft import LoraConfig, get_peft_model
+from peft.tuners.lora import LoraLayer
 from transformers import (
     BitsAndBytesConfig,
     DataCollatorForSeq2Seq,
+    DefaultDataCollator,
     HfArgumentParser,
     LlamaForCausalLM,
     LlamaTokenizer,
@@ -104,7 +106,7 @@ class TrainingArguments(TrainingArguments):
         metadata={"help": "Whether to verbose log on training process"},
     )
     use_nf4_training: bool = field(
-        default=True,
+        default=False,
         metadata={"help": "Whether to use nf4 training (QLora), only available when use_lora is True"},
     )
     deepspeed: str = field(
@@ -142,6 +144,8 @@ def enable_lora_training(
     """
     device_map = {"": int(os.environ.get("LOCAL_RANK") or 0)} if ddp else "auto"
     use_nf4_training = training_args.use_nf4_training
+    if use_nf4_training:
+        raise Exception("nf4 training is currently not supported, see https://github.com/huggingface/peft/issues/393 ")
     if use_nf4_training and training_args.deepspeed is not None:
         raise Exception("nf4 training is not supported with deepspeed")
     nf4_config = (
@@ -157,15 +161,12 @@ def enable_lora_training(
     model = LlamaForCausalLM.from_pretrained(
         model_args.model_name_or_path,
         torch_dtype=torch.bfloat16,
+        low_cpu_mem_usage=True,
         load_in_4bit=use_nf4_training,
         device_map=device_map,
         max_memory=max_memory,
         quantization_config=nf4_config,
     )
-    if not ddp and torch.cuda.device_count() > 1:
-        # keeps Trainer from trying its own DataParallelism when more than 1 gpu is available
-        model.is_parallelizable = True
-        model.model_parallel = True
 
     lora_config = json.load(open(training_args.lora_config))
     print_rank_0(f"Lora config: {lora_config}")
@@ -193,10 +194,11 @@ def enable_lora_training(
     model.get_input_embeddings().register_forward_hook(make_inputs_require_grad)
 
     model = get_peft_model(model, config)
-    trainable_params, all_param = model.get_nb_trainable_parameters()
-    print_rank_0(
-        f"trainable params: {trainable_params:,d} || all params: {all_param:,d} || trainable%: {100 * trainable_params / all_param}"  # noqa: E501
-    )
+
+    # trainable_params, all_param = model.get_nb_trainable_parameters()
+    # print_rank_0(
+    #     f"trainable params: {trainable_params:,d} || all params: {all_param:,d} || trainable%: {100 * trainable_params / all_param}"  # noqa: E501
+    # )
     return model
 
 
@@ -221,8 +223,9 @@ def init_model_and_tokenizer(
 
     tokenizer = LlamaTokenizer.from_pretrained(
         model_args.model_name_or_path,
-        padding_side="right",
+        padding_side="left",
         pad_token=PAD_TOKEN,
+        legacy=True,
         model_max_length=(
             training_args.model_max_length if training_args.train_task == TrainTask.SUPERVISED_FINETUNE.value else None
         ),
@@ -241,8 +244,13 @@ def init_model_and_tokenizer(
             cache_dir=model_args.cache_dir,
             torch_dtype=torch.bfloat16,
             max_memory=max_memory,
+            low_cpu_mem_usage=True,
         )
 
+    if not ddp and torch.cuda.device_count() > 1:
+        # keeps Trainer from trying its own DataParallelism when more than 1 gpu is available
+        model.is_parallelizable = True
+        model.model_parallel = True
     if training_args.gradient_checkpointing:
         model.gradient_checkpointing_enable()
 
@@ -252,6 +260,20 @@ def init_model_and_tokenizer(
             if "model.embed_tokens" not in name:
                 print_rank_0(f"Freezing {name} in embedding layer training")
                 param.requires_grad = False
+    else:
+        for name, param in model.named_parameters():
+            if "model.embed_tokens" in name or "model.lm_head" in name:
+                param.requires_grad = True
+
+    for name, module in model.named_modules():
+        if isinstance(module, LoraLayer):
+            module = module.to(torch.bfloat16)
+        if "norm" in name:
+            module = module.to(torch.bfloat16)
+        if "lm_head" in name or "embed_tokens" in name:
+            if hasattr(module, "weight"):
+                if module.weight.dtype == torch.float32:
+                    module = module.to(torch.bfloat16)
 
     return model, tokenizer
 
@@ -274,9 +296,10 @@ def main():
     print_rank_0 = create_rank_0_printer(global_rank, training_args.output_dir)
 
     # Log on each process the small summary:
+    half_train = training_args.fp16 or training_args.bf16
     logger.warning(
-        f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
-        + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
+        f"Process rank: {training_args.local_rank}, device: {training_args.device}, ddp: {ddp}, "
+        + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {half_train}"
     )
     logger.info(f"Training/evaluation parameters {training_args}")
 
@@ -299,13 +322,14 @@ def main():
     set_seed(training_args.seed)
     model, tokenizer = init_model_and_tokenizer(model_args, training_args, ddp, print_rank_0)
 
-    with training_args.main_process_first():
+    with training_args.main_process_first("load datasets"):
         datasets = load_from_disk(data_args.dataset)
         training_nums = len(datasets["train"])
         val_nums = len(datasets["validation"])
-        assert training_args.model_max_length == len(
-            datasets["train"][0]["input_ids"]
-        ), f"Dataset sequence length should be equal to model_max_length, but got {len(datasets['train'][0]['input_ids'])} != {training_args.model_max_length}"  # noqa: E501
+        if training_args.train_task != TrainTask.SUPERVISED_FINETUNE.value:
+            assert training_args.model_max_length == len(
+                datasets["train"][0]["input_ids"]
+            ), f"Dataset sequence length should be equal to model_max_length, but got {len(datasets['train'][0]['input_ids'])} != {training_args.model_max_length}"  # noqa: E501
         print_rank_0(f"Total training tokens: {training_nums * training_args.model_max_length / 1000_000}M")
 
     num_gpus = torch.cuda.device_count()
@@ -336,12 +360,10 @@ def main():
         args=training_args,
         train_dataset=datasets["train"],
         eval_dataset=datasets["validation"],
-        data_collator=DataCollatorForSeq2Seq(
-            tokenizer,
-            pad_to_multiple_of=8,
-            return_tensors="pt",
-            padding="max_length",
-            max_length=training_args.model_max_length,
+        data_collator=(
+            DataCollatorForSeq2Seq(tokenizer, pad_to_multiple_of=8, return_tensors="pt", padding=True)
+            if training_args.train_task == TrainTask.SUPERVISED_FINETUNE.value
+            else DefaultDataCollator(return_tensors="pt")
         ),
     )
     print_rank_0(f"Using {training_args.half_precision_backend} half precision backend")

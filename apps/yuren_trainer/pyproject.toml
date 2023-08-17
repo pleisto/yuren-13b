@@ -3,7 +3,7 @@ name = "yuren-trainer"
 version = "0.1.0"
 description = "Add a short description here"
 dependencies = [
-    "peft @ git+https://github.com/huggingface/peft",
+    "peft @ git+https://github.com/huggingface/peft.git@13e53fc",
     "datasets>=2.14.4",
     "wandb>=0.15.8",
     "deepspeed>=0.10.0",

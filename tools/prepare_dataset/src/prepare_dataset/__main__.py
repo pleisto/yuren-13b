@@ -19,7 +19,7 @@ import os
 from functools import partial
 from typing import Dict, List
 
-from datasets import Dataset, DatasetDict, load_dataset
+from datasets import Dataset, DatasetDict, concatenate_datasets, load_dataset
 from transformers import AutoTokenizer
 from transformers.trainer_pt_utils import LabelSmoother
 from yuren_core.constants import IM_END_TOKEN, IM_START_TOKEN, PAD_TOKEN
@@ -28,7 +28,6 @@ from yuren_core.utils import last_index_of_list
 arg_parser = argparse.ArgumentParser()
 arg_parser.add_argument("--train_file", type=str, required=True)
 arg_parser.add_argument("--validation_file", type=str, default=None)
-arg_parser.add_argument("--type", choices=["text", "chatml"], required=True)
 arg_parser.add_argument("--tokenizer_path", type=str, default="./data/llama2-han-tokenizer/dist")
 arg_parser.add_argument("--output_path", type=str, default=None)
 arg_parser.add_argument("--model_max_length", type=int, default=4096)
@@ -40,10 +39,10 @@ PROC_NUM = 10
 
 
 def main():
-    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path)
+    tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_path, legacy=True)
+
     load_dataset = partial(
         preparing_dataset,
-        args.type == "chatml",
         args.model_max_length,
         args.cache_dir,
         tokenizer,
@@ -57,6 +56,7 @@ def main():
     else:
         ds = DatasetDict({"train": train_dataset, "validation": val_dataset})
 
+    print(f"Packed examples: {len(ds['train'])} train, {len(ds['validation'])} val")
     # extra_filename for path without extension
     output_path = (
         args.output_path or f"./dist/ds_{args.train_file.split('/')[-1].split('.')[0]}_{args.model_max_length}"
@@ -66,7 +66,6 @@ def main():
 
 
 def preparing_dataset(
-    is_chatml: bool,
     model_max_length: int,
     cache_dir: str,
     tokenizer: AutoTokenizer,
@@ -88,20 +87,33 @@ def preparing_dataset(
         raise Exception(f"Dataset {filename} does not exist or is a unsupported format.")
 
     format = "json" if filename.endswith(".json") else "parquet"
-    data = load_dataset(format, data_files=filename, cache_dir=cache_dir)["train"].shuffle()
-    example_processor = _tokenize_chatml if is_chatml else _batch_tokenize_texts
-    data = data.map(
-        partial(example_processor, tokenizer, model_max_length),
-        num_proc=PROC_NUM,
-        batched=not is_chatml,
-        remove_columns=data.column_names,
+    raw_data = load_dataset(format, data_files=filename, cache_dir=cache_dir)["train"]
+    chatml_data = raw_data.filter(
+        lambda example: isinstance(example.get("conversations"), list) and len(example["conversations"]) > 1,
+    )
+    text_data = raw_data.filter(
+        lambda example: isinstance(example.get("completion"), str) and len(example["completion"]) > 0,
     )
 
-    if is_chatml:
-        for i in range(1):
-            # since this function is called in torch_distributed_zero_first, no need rank_0_print
-            print(f"{filename} tokenized example: {data[i]}")
+    if len(raw_data) != len(chatml_data) + len(text_data):
+        print(
+            f"Warning: {len(chatml_data)} chatml examples + {len(text_data)} text examples = {len(chatml_data) + len(text_data)}, but raw data has {len(raw_data)} examples"  # noqa: E501
+        )
 
+    text_data = text_data.map(
+        partial(_batch_tokenize_texts, tokenizer, model_max_length),
+        num_proc=PROC_NUM,
+        batched=True,
+        remove_columns=text_data.column_names,
+    )
+    print(f"tokenized text examples {text_data.num_rows}")
+    chatml_data = chatml_data.map(
+        partial(_tokenize_chatml, tokenizer, model_max_length),
+        num_proc=PROC_NUM,
+        remove_columns=chatml_data.column_names,
+    )
+    print(f"tokenized chatml examples {chatml_data.num_rows}")
+    data = concatenate_datasets([text_data, chatml_data])
     return data
 
 
@@ -115,21 +127,28 @@ def _tokenize_chatml(tokenizer: AutoTokenizer, max_len: int, example: Dict) -> D
         example (dict): A dictionary containing the conversation data.
 
     Returns:
-        dict: A dictionary containing tokenized input ids, attention masks, and labels.
+        dict: A dictionary containing tokenized input ids and labels.
     """
     input_ids = []
     labels = []
+
+    assert example.get("conversations") is not None, f"Missing conversations in {example}"
+
     conversations = example["conversations"]
 
     for sentence in conversations:
         role = sentence["from"].lower()
 
-        if role is None:
-            raise ValueError(f"Unknown sentence: {sentence}")
+        assert role in [
+            "system",
+            "user",
+            "assistant",
+            "function",
+        ], f"Unknown role: {role} in example:{example}"
 
         if role == "system":
             formatted_sentence = IM_START_TOKEN + role + "\n" + sentence["value"] + IM_END_TOKEN
-        elif role == "user":
+        elif role == "user" or role == "function":
             formatted_sentence = (
                 f"\n{IM_START_TOKEN}"
                 + role
@@ -140,28 +159,32 @@ def _tokenize_chatml(tokenizer: AutoTokenizer, max_len: int, example: Dict) -> D
                 + "\n"
             )
         else:
-            formatted_sentence = sentence["value"] + IM_END_TOKEN
+            assert role == "assistant", f"last conversation role is {role} instead of assistant, example: {example}"
+            formatted_sentence = sentence["value"] + IM_END_TOKEN + tokenizer.eos_token
 
-        encoded_sentence = tokenizer.encode(formatted_sentence)
+        encoded_sentence = tokenizer.encode(formatted_sentence, add_special_tokens=False)
         label = copy.deepcopy(encoded_sentence) if role == "assistant" else [IGNORE_TOKEN_ID] * len(encoded_sentence)
+
         input_ids += encoded_sentence
         labels += label
 
-    # add bos token for the first sentence in the conversation
-    input_ids = [tokenizer.bos_token_id] + input_ids
-    labels = [tokenizer.bos_token_id] + labels
-
-    # truncate the input_ids and labels to model_max_length
+    # truncate the input_ids and labels to max_length
     input_ids = input_ids[:max_len]
     labels = labels[:max_len]
 
-    # labels can not have all values being -100. 18 and 24 are just random numbers
-    if all(x == IGNORE_TOKEN_ID for x in labels):
-        raise ValueError(f"Labels can not have all values being: {conversations}")
+    # replace the last token with eos_token_id if it is not eos_token_id
+    if input_ids[-1] != tokenizer.eos_token_id:
+        input_ids[-1] = tokenizer.eos_token_id
+        labels[-1] = tokenizer.eos_token_id
 
+    # labels can not have all values being -100. 18 and 24 are just random numbers
+    if not any(x > IGNORE_TOKEN_ID for x in labels):
+        labels[18:24] = input_ids[18:24]
+
+    attention_mask = [1] * len(input_ids)
     tokenized_full_prompt = {
         "input_ids": input_ids,
-        "attention_mask": [1] * len(input_ids),
+        "attention_mask": attention_mask,
         "labels": labels,
     }
     return tokenized_full_prompt
@@ -214,9 +237,8 @@ def _batch_tokenize_texts(
         "labels": [],
     }
 
-    def tokenize_example(context, completion):
+    def _tokenize_text_example(context, completion):
         """Tokenizes context and completion, adds bos token, and returns input ids and labels."""
-        # use pad_token to separate context and completion
         tokenizer.pad_token_id = tokenizer.convert_tokens_to_ids(PAD_TOKEN)
         input_ids = tokenizer.encode(
             f"{context if context else ''}{tokenizer.pad_token}{completion}",
@@ -235,7 +257,6 @@ def _batch_tokenize_texts(
         # remove the pad_token_id in all cases, as it's just a separator
         input_ids.pop(sep_index)
         labels.pop(sep_index)
-
         return [tokenizer.bos_token_id] + input_ids, [tokenizer.bos_token_id] + labels
 
     def add_to_tokenized_dataset(input_ids, labels):
@@ -280,7 +301,7 @@ def _batch_tokenize_texts(
     # iterate through each example
     for context, completion in zip(examples["context"], examples["completion"]):
         # breakpoint()
-        input_ids, labels = tokenize_example(context, completion)
+        input_ids, labels = _tokenize_text_example(context, completion)
 
         # add bos token to the beginning of the input_ids and labels
         example_buffer["input_ids"].extend(input_ids)
