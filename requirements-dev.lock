@@ -88,7 +88,7 @@ packaging==23.1
 pandas==2.0.3
 pathspec==0.11.1
 pathtools==0.1.2
-peft @ git+https://github.com/huggingface/peft
+peft @ git+https://github.com/huggingface/peft.git@13e53fc
 pillow==10.0.0
 platformdirs==3.9.1
 protobuf==3.20.3
