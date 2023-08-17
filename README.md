@@ -154,7 +154,7 @@ torchrun --nproc_per_node=8 -m yuren_trainer --train_task 'sft' \
   --model_name_or_path "dist/yuren-13b-base" --model_max_length 2048  --dataset 'data/ds_sft_2048' \
   --num_train_epochs 3 --per_device_eval_batch_size 4 --per_device_train_batch_size 4 \
   --gradient_accumulation_steps 4 --evaluation_strategy "steps" --eval_steps 512 \
-  --save_strategy "steps" --save_steps 340 --save_total_limit 8 --learning_rate 3e-5 \
+  --save_strategy "steps" --save_steps 340 --save_total_limit 8 --learning_rate 2e-5 \
   --weight_decay 0. --lr_scheduler_type "cosine" --logging_steps 10 \
   --run_name yuren-13b-stage1 --warmup_ratio 0.03 \
   --dataloader_drop_last True --group_by_length True --bf16 True \

@@ -244,7 +244,6 @@ def init_model_and_tokenizer(
             cache_dir=model_args.cache_dir,
             torch_dtype=torch.bfloat16,
             max_memory=max_memory,
-            low_cpu_mem_usage=True,
         )
 
     if not ddp and torch.cuda.device_count() > 1:
@@ -265,15 +264,16 @@ def init_model_and_tokenizer(
             if "model.embed_tokens" in name or "model.lm_head" in name:
                 param.requires_grad = True
 
-    for name, module in model.named_modules():
-        if isinstance(module, LoraLayer):
-            module = module.to(torch.bfloat16)
-        if "norm" in name:
-            module = module.to(torch.bfloat16)
-        if "lm_head" in name or "embed_tokens" in name:
-            if hasattr(module, "weight"):
-                if module.weight.dtype == torch.float32:
-                    module = module.to(torch.bfloat16)
+    if training_args.use_lora:
+        for name, module in model.named_modules():
+            if isinstance(module, LoraLayer):
+                module = module.to(torch.bfloat16)
+            if "norm" in name:
+                module = module.to(torch.bfloat16)
+            if "lm_head" in name or "embed_tokens" in name:
+                if hasattr(module, "weight"):
+                    if module.weight.dtype == torch.float32:
+                        module = module.to(torch.bfloat16)
 
     return model, tokenizer
 
