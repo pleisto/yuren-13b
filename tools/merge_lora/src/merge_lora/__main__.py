@@ -139,30 +139,17 @@ def translate_state_dict_key(k):
 
 
 def merge_shards(output_dir, num_shards: int):
-    ckpt_filenames = sorted(
-        [
-            f
-            for f in os.listdir(output_dir)
-            if re.match("L(\d+)-consolidated.(\d+).pth", f)
-        ]
-    )
+    ckpt_filenames = sorted([f for f in os.listdir(output_dir) if re.match("L(\d+)-consolidated.(\d+).pth", f)])
 
     for i in range(num_shards):
-        shards_filenames = sorted(
-            [f for f in ckpt_filenames if re.match(f"L(\d+)-consolidated.0{i}.pth", f)]
-        )
+        shards_filenames = sorted([f for f in ckpt_filenames if re.match(f"L(\d+)-consolidated.0{i}.pth", f)])
         print(f"Loading {shards_filenames} ...")
-        shards_dicts = [
-            torch.load(os.path.join(output_dir, fn)) for fn in shards_filenames
-        ]
+        shards_dicts = [torch.load(os.path.join(output_dir, fn)) for fn in shards_filenames]
         shards_merged = {}
         for d in shards_dicts:
             shards_merged |= d
 
-        print(
-            "Saving the merged shard to "
-            + os.path.join(output_dir, f"consolidated.0{i}.pth")
-        )
+        print("Saving the merged shard to " + os.path.join(output_dir, f"consolidated.0{i}.pth"))
         torch.save(shards_merged, os.path.join(output_dir, f"consolidated.0{i}.pth"))
 
         print("Cleaning up...")
@@ -193,13 +180,9 @@ if __name__ == "__main__":
         lora_model_path = snapshot_download(repo_id=lora_model_path)
     tokenizer = LlamaTokenizer.from_pretrained(lora_model_path, legacy=True)
     lora_config = peft.LoraConfig.from_pretrained(lora_model_path)
-    lora_state_dict = torch.load(
-        os.path.join(lora_model_path, "adapter_model.bin"), map_location="cpu"
-    )
+    lora_state_dict = torch.load(os.path.join(lora_model_path, "adapter_model.bin"), map_location="cpu")
     if "base_model.model.model.embed_tokens.weight" in lora_state_dict:
-        lora_vocab_size = lora_state_dict[
-            "base_model.model.model.embed_tokens.weight"
-        ].shape[0]
+        lora_vocab_size = lora_state_dict["base_model.model.model.embed_tokens.weight"].shape[0]
 
     tokenizers_and_loras.append(
         {
@@ -214,13 +197,7 @@ if __name__ == "__main__":
     if not os.path.exists(base_model_path):
         print("Cannot find lora model on the disk. Downloading lora model from hub...")
         base_model_path = snapshot_download(repo_id=base_model_path)
-    ckpt_filenames = sorted(
-        [
-            f
-            for f in os.listdir(base_model_path)
-            if re.match("pytorch_model-(\d+)-of-(\d+).bin", f)
-        ]
-    )
+    ckpt_filenames = sorted([f for f in os.listdir(base_model_path) if re.match("pytorch_model-(\d+)-of-(\d+).bin", f)])
     if len(ckpt_filenames) == 0:
         raise FileNotFoundError(
             f"Cannot find base model checkpoints in ${base_model_path}. Please make sure the checkpoints are saved in"
@@ -231,9 +208,7 @@ if __name__ == "__main__":
     total_size = 0
     for index, filename in enumerate(ckpt_filenames):
         print(f"Loading ckpt {filename}")
-        state_dict = torch.load(
-            os.path.join(base_model_path, filename), map_location="cpu"
-        )
+        state_dict = torch.load(os.path.join(base_model_path, filename), map_location="cpu")
         if index == 0:
             embedding_size = state_dict["model.embed_tokens.weight"].shape[1]
             model_size = emb_to_model_size[embedding_size]
@@ -245,22 +220,15 @@ if __name__ == "__main__":
                 lora_key_A = saved_key.replace(".weight", ".lora_A.weight")
                 if saved_key in t_and_l["state_dict"]:
                     if args.verbose:
-                        print(
-                            f"copying {saved_key} from {tl_idx}-th LoRA weight to {k}"
-                        )
-                    state_dict[k] = (
-                        t_and_l["state_dict"][saved_key].half().clone()
-                    )  # do we need half()?
+                        print(f"copying {saved_key} from {tl_idx}-th LoRA weight to {k}")
+                    state_dict[k] = t_and_l["state_dict"][saved_key].half().clone()  # do we need half()?
                 if lora_key_A in t_and_l["state_dict"]:
                     lora_key_B = lora_key_A.replace("lora_A.weight", "lora_B.weight")
                     if args.verbose:
-                        print(
-                            f"merging {lora_key_A} and lora_B.weight form {tl_idx}-th LoRA weight to {k}"
-                        )
+                        print(f"merging {lora_key_A} and lora_B.weight form {tl_idx}-th LoRA weight to {k}")
                     state_dict[k] += (
                         transpose(
-                            t_and_l["state_dict"][lora_key_B].float()
-                            @ t_and_l["state_dict"][lora_key_A].float(),
+                            t_and_l["state_dict"][lora_key_B].float() @ t_and_l["state_dict"][lora_key_A].float(),
                             t_and_l["fan_in_fan_out"],
                         )
                         * t_and_l["scaling"]
