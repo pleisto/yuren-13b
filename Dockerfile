@@ -36,4 +36,8 @@ ENV YUREN_WEB_TITLE "羽人-13b"
 # Expose for web service
 EXPOSE 7860
 
+RUN ln -s \
+    /usr/local/cuda-11.7/targets/x86_64-linux/lib/libcupti.so.2022.2.1 \
+    /usr/lib/libcupti.so.11.7
+
 ENTRYPOINT [ "rye","run" ,"webui" ,"/pleisto/yuren-13b"]

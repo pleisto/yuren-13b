@@ -28,6 +28,7 @@ bitsandbytes==0.41.1
 certifi==2023.7.22
 charset-normalizer==3.2.0
 click==8.1.6
+cmake==3.27.2
 contourpy==1.1.0
 cycler==0.11.0
 dataclasses-json==0.5.13
@@ -47,6 +48,7 @@ gitdb==4.0.10
 gitpython==3.1.32
 gradio==3.38.0
 gradio-client==0.2.10
+greenlet==2.0.2
 h11==0.14.0
 hjson==3.1.0
 httpcore==0.17.3
@@ -61,6 +63,7 @@ langchain==0.0.240
 langsmith==0.0.14
 latex2mathml==3.76.0
 linkify-it-py==2.0.2
+lit==16.0.6
 llama-index==0.7.11.post1
 markdown==3.4.3
 markdown-it-py==2.2.0
@@ -79,6 +82,17 @@ networkx==3.1
 ninja==1.11.1
 numexpr==2.8.4
 numpy==1.25.1
+nvidia-cublas-cu11==11.10.3.66
+nvidia-cuda-cupti-cu11==11.7.101
+nvidia-cuda-nvrtc-cu11==11.7.99
+nvidia-cuda-runtime-cu11==11.7.99
+nvidia-cudnn-cu11==8.5.0.96
+nvidia-cufft-cu11==10.9.0.58
+nvidia-curand-cu11==10.2.10.91
+nvidia-cusolver-cu11==11.4.0.1
+nvidia-cusparse-cu11==11.7.4.91
+nvidia-nccl-cu11==2.14.3
+nvidia-nvtx-cu11==11.7.91
 openai==0.27.8
 openapi-schema-pydantic==1.2.4
 orjson==3.9.2
@@ -124,6 +138,7 @@ torch==2.0.1
 tqdm==4.65.0
 transformers==4.31.0
 transformers-stream-generator==0.0.4
+triton==2.0.0
 typing-extensions==4.7.1
 typing-inspect==0.9.0
 tzdata==2023.3
@@ -132,6 +147,7 @@ urllib3==1.26.16
 uvicorn==0.23.1
 wandb==0.15.8
 websockets==11.0.3
+wheel==0.41.2
 xxhash==3.2.0
 yarl==1.9.2
 # The following packages are considered to be unsafe in a requirements file:
