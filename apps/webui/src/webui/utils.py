@@ -32,6 +32,11 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from webui.constants import ALREADY_CONVERTED_MARK, ChatbotValue, Conversation
 from yuren_core.constants import IM_END_TOKEN, IM_START_TOKEN
 from yuren_core.errors import MaxTokenLengthError
+from yuren_core.llama_flash_attn_monkey_patch import replace_llama_attn_with_flash_attn
+
+# use flash attention 2.0 to replace llama attention
+# this is optional, and could safely be skipped if flash attention is not installed
+replace_llama_attn_with_flash_attn()
 
 logging.basicConfig(
     level=logging.INFO,
