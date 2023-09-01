@@ -12,12 +12,13 @@ dependencies = [
     "einops>=0.6.1",
     "protobuf==3.*",
     "bitsandbytes>=0.41.1",
-    "torch==2.*",
+    "torch>=2.0.1",
     "accelerate>=0.21.0",
     "setuptools>=68.0.0",
     "scipy>=1.11.1",
     "transformers_stream_generator>=0.0.4",
     "safetensors>=0.3.2",
+    "flash-attn>=2.1.1",
 ]
 readme = "README.md"
 requires-python = ">= 3.10"
