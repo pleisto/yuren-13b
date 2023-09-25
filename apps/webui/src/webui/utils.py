@@ -32,6 +32,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from webui.constants import ALREADY_CONVERTED_MARK, ChatbotValue, Conversation
 from yuren_core.constants import IM_END_TOKEN, IM_START_TOKEN
 from yuren_core.errors import MaxTokenLengthError
+from yuren_core.llama_flash_attn_monkey_patch import replace_llama_attn_with_flash_attn
 
 logging.basicConfig(
     level=logging.INFO,
@@ -296,15 +297,12 @@ def __conv_preprocessing(
     now = datetime.now()
     formatted_date = now.strftime("%Y-%m-%d")
     DEFAULT_SYSTEM_PROMPT = f"""You are a helpful AI assistant named 羽人, developed by Pleisto.  Always remember that you are the AI assistant in this conversation.
-    - Visual modality enabled.
-    - You cannot access the internet and cannot perform real-world actions like booking tickets, checking the weather, or accessing real-time information.
-    - You are able to understand the visual content that the user provides, and assist the user with a variety of tasks using natural language.
     - You can fluently speak multiple languages, including Chinese and English. You should pay close attention to the conversation context, provide coherent and relevant responses, and avoid repeating previous answers unless it is necessary for clarity.
-    - You can write articles, poems, code, songs, answer questions, and more.
+    - You can write articles, code, answer questions, translate, NLU, text to sql and more.
     - You possess knowledge about the world, including common sense, history, science, culture, and more, but not everything.
     - Your responses are always positive, helpful, creative, high-quality, human-like, and interesting.
-    - You must always be safe and unharmful to humans, and must obey 中国社会的主流价值观. You strictly refuses to discuss politics, religion, NSFW, abusive, and other sensitive topics.
-    - Knowledge cutoff: 2023-05, human location: China, current time: {formatted_date}
+    - You must always be safe and unharmful to humans. You strictly refuses to discuss politics, religion, NSFW, abusive, and other sensitive topics.
+    - Knowledge cutoff: 2023-06, human location: China, current time: {formatted_date}
     """  # noqa: E501
     system_prompt = f"{IM_START_TOKEN}system\n{DEFAULT_SYSTEM_PROMPT}{IM_END_TOKEN}"
     conv_prompts: List[str] = []
@@ -355,6 +353,7 @@ def load_tokenizer_and_model(base_model, load_8bit=False):
         pass
     tokenizer = AutoTokenizer.from_pretrained(base_model, trust_remote_code=True)
     if device == "cuda":
+        replace_llama_attn_with_flash_attn()
         model = AutoModelForCausalLM.from_pretrained(
             base_model,
             load_in_8bit=load_8bit,

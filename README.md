@@ -29,7 +29,7 @@ Yuren 13B is an information synthesis large language model that has been continu
 # rye sync # 可替代 pip install -r requirements.lock
 
 pip install -r requirements.lock
-python -m webui.app "pleisto/yuren-13b-chat" # --load_8bit True --server_name "0.0.0.0" --share True
+python -m webui.app "pleisto/yuren-13b-chatml" # --load_8bit True --server_name "0.0.0.0" --share True
 ```
 
 ## 局限性
