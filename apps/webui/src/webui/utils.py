@@ -248,14 +248,14 @@ def sample_decode(
     im_end_token_id = tokenizer.convert_tokens_to_ids([IM_END_TOKEN])[0]
     for i in range(max_new_tokens):
         if i == 0:
-            outputs = model(torch.as_tensor(input_ids, device=device), use_cache=True)
+            outputs = model(torch.as_tensor(input_ids, device=device), use_cache=False)
             logits = outputs.logits
             past_key_values = outputs.past_key_values
         else:
             attention_mask = torch.ones(1, past_key_values[0][0].shape[-2] + 1, device=device)
             outputs = model(
                 input_ids=torch.as_tensor([[token]], device=device),  # noqa: F821
-                use_cache=True,
+                use_cache=False,
                 attention_mask=attention_mask,
                 past_key_values=past_key_values,
             )
