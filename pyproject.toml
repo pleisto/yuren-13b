@@ -7,7 +7,7 @@ authors = [
 ]
 license = "Apache-2.0"
 dependencies = [
-    "transformers>=4.31.0",
+    "transformers>=4.33.2",
     "sentencepiece>=0.1.99",
     "einops>=0.6.1",
     "protobuf==3.*",
@@ -17,14 +17,14 @@ dependencies = [
     "setuptools>=68.0.0",
     "scipy>=1.11.1",
     "transformers_stream_generator>=0.0.4",
-    "safetensors>=0.3.2",
+    "safetensors>=0.3.3",
 ]
 readme = "README.md"
 requires-python = ">= 3.10"
 
 [project.optional-dependencies]
 cuda = [
-    "flash-attn>=2.0.1",
+    "flash-attn>=2.2.5",
 ]
 
 [build-system]

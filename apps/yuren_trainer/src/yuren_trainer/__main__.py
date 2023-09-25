@@ -65,7 +65,9 @@ class ModelArguments:
     )
     cache_dir: Optional[str] = field(
         default=None,
-        metadata={"help": "Where do you want to store the pretrained models and datasets load from huggingface.co"},
+        metadata={
+            "help": "Where do you want to store the pretrained models and datasets load from huggingface.co"
+        },
     )
 
 
@@ -91,7 +93,9 @@ class TrainingArguments(TrainingArguments):
         default=None,
         metadata={"help": "LoRA config file."},
     )
-    gradient_checkpointing: bool = field(default=False, metadata={"help": "Whether to use gradient checkpointing."})
+    gradient_checkpointing: bool = field(
+        default=False, metadata={"help": "Whether to use gradient checkpointing."}
+    )
     report_to: str = field(
         default="wandb",
         metadata={"help": "use wandb to log training process"},
@@ -107,7 +111,9 @@ class TrainingArguments(TrainingArguments):
     )
     use_nf4_training: bool = field(
         default=False,
-        metadata={"help": "Whether to use nf4 training (QLora), only available when use_lora is True"},
+        metadata={
+            "help": "Whether to use nf4 training (QLora), only available when use_lora is True"
+        },
     )
     deepspeed: str = field(
         default=None,
@@ -118,8 +124,12 @@ class TrainingArguments(TrainingArguments):
             )
         },
     )
-    ddp_find_unused_parameters: bool = field(default=None, metadata={"help": "ddp_find_unused_parameters"})
-    train_task: TrainTask = field(default=TrainTask.SUPERVISED_FINETUNE, metadata={"help": "train_task"})
+    ddp_find_unused_parameters: bool = field(
+        default=None, metadata={"help": "ddp_find_unused_parameters"}
+    )
+    train_task: TrainTask = field(
+        default=TrainTask.SUPERVISED_FINETUNE, metadata={"help": "train_task"}
+    )
 
 
 def enable_lora_training(
@@ -145,7 +155,9 @@ def enable_lora_training(
     device_map = {"": int(os.environ.get("LOCAL_RANK") or 0)} if ddp else "auto"
     use_nf4_training = training_args.use_nf4_training
     if use_nf4_training:
-        raise Exception("nf4 training is currently not supported, see https://github.com/huggingface/peft/issues/393 ")
+        raise Exception(
+            "nf4 training is currently not supported, see https://github.com/huggingface/peft/issues/393 "
+        )
     if use_nf4_training and training_args.deepspeed is not None:
         raise Exception("nf4 training is not supported with deepspeed")
     nf4_config = (
@@ -175,7 +187,9 @@ def enable_lora_training(
         r=lora_config["r"],
         lora_alpha=lora_config["lora_alpha"],
         target_modules=lora_config["lora_target_modules"],
-        lora_dropout=0.05 if training_args.train_task == TrainTask.SUPERVISED_FINETUNE.value else 0.1,
+        lora_dropout=0.05
+        if training_args.train_task == TrainTask.SUPERVISED_FINETUNE.value
+        else 0.1,
         bias="none",
         task_type="CAUSAL_LM",
         modules_to_save=(
@@ -227,7 +241,9 @@ def init_model_and_tokenizer(
         pad_token=PAD_TOKEN,
         legacy=True,
         model_max_length=(
-            training_args.model_max_length if training_args.train_task == TrainTask.SUPERVISED_FINETUNE.value else None
+            training_args.model_max_length
+            if training_args.train_task == TrainTask.SUPERVISED_FINETUNE.value
+            else None
         ),
     )
 
@@ -236,7 +252,9 @@ def init_model_and_tokenizer(
     max_memory = {i: max_memory for i in range(n_gpus)}
 
     if training_args.use_lora:
-        model = enable_lora_training(training_args, model_args, print_rank_0, ddp, max_memory)
+        model = enable_lora_training(
+            training_args, model_args, print_rank_0, ddp, max_memory
+        )
 
     else:
         model = LlamaForCausalLM.from_pretrained(
@@ -292,7 +310,9 @@ def main():
     global_rank = torch.distributed.get_rank()
 
     # Setup logging
-    logger = create_logger(__name__, training_args.get_process_log_level(), training_args.should_log)
+    logger = create_logger(
+        __name__, training_args.get_process_log_level(), training_args.should_log
+    )
     print_rank_0 = create_rank_0_printer(global_rank, training_args.output_dir)
 
     # Log on each process the small summary:
@@ -305,14 +325,20 @@ def main():
 
     # Detecting last checkpoint.
     last_checkpoint = None
-    if os.path.isdir(training_args.output_dir) and training_args.do_train and not training_args.overwrite_output_dir:
+    if (
+        os.path.isdir(training_args.output_dir)
+        and training_args.do_train
+        and not training_args.overwrite_output_dir
+    ):
         last_checkpoint = get_last_checkpoint(training_args.output_dir)
         if last_checkpoint is None and len(os.listdir(training_args.output_dir)) > 0:
             raise ValueError(
                 f"Output directory ({training_args.output_dir}) already exists and is not empty. "
                 "Use --overwrite_output_dir to overcome."
             )
-        elif last_checkpoint is not None and training_args.resume_from_checkpoint is None:
+        elif (
+            last_checkpoint is not None and training_args.resume_from_checkpoint is None
+        ):
             logger.info(
                 f"Checkpoint detected, resuming training at {last_checkpoint}. To avoid this behavior, change "
                 "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
@@ -320,7 +346,9 @@ def main():
 
     # Set seed before initializing model.
     set_seed(training_args.seed)
-    model, tokenizer = init_model_and_tokenizer(model_args, training_args, ddp, print_rank_0)
+    model, tokenizer = init_model_and_tokenizer(
+        model_args, training_args, ddp, print_rank_0
+    )
 
     with training_args.main_process_first("load datasets"):
         datasets = load_from_disk(data_args.dataset)
@@ -330,17 +358,23 @@ def main():
             assert training_args.model_max_length == len(
                 datasets["train"][0]["input_ids"]
             ), f"Dataset sequence length should be equal to model_max_length, but got {len(datasets['train'][0]['input_ids'])} != {training_args.model_max_length}"  # noqa: E501
-        print_rank_0(f"Total training tokens: {training_nums * training_args.model_max_length / 1000_000}M")
+        print_rank_0(
+            f"Total training tokens: {training_nums * training_args.model_max_length / 1000_000}M"
+        )
 
     num_gpus = torch.cuda.device_count()
 
     batch_size = (
-        training_args.per_device_train_batch_size * training_args.world_size * training_args.gradient_accumulation_steps
+        training_args.per_device_train_batch_size
+        * training_args.world_size
+        * training_args.gradient_accumulation_steps
     )
     t_total = math.ceil(training_nums / batch_size) * training_args.num_train_epochs
 
     training_args.warmup_steps = (
-        int(t_total * training_args.warmup_ratio) if training_args.warmup_ratio > 0.0 else training_args.warmup_steps
+        int(t_total * training_args.warmup_ratio)
+        if training_args.warmup_ratio > 0.0
+        else training_args.warmup_steps
     )
     print_rank_0(
         "num_gpus = {}, training_nums = {}, t_total = {}, warmup_steps = {}, eval_steps = {}, save_steps = {}".format(
@@ -352,7 +386,9 @@ def main():
             training_args.save_steps,
         )
     )
-    print_rank_0(f"val data nums = {val_nums}, training_nums = {training_nums}, batch_size = {batch_size}")
+    print_rank_0(
+        f"val data nums = {val_nums}, training_nums = {training_nums}, batch_size = {batch_size}"
+    )
 
     trainer = Trainer(
         model=model,
@@ -361,7 +397,9 @@ def main():
         train_dataset=datasets["train"],
         eval_dataset=datasets["validation"],
         data_collator=(
-            DataCollatorForSeq2Seq(tokenizer, pad_to_multiple_of=8, return_tensors="pt", padding=True)
+            DataCollatorForSeq2Seq(
+                tokenizer, pad_to_multiple_of=8, return_tensors="pt", padding=True
+            )
             if training_args.train_task == TrainTask.SUPERVISED_FINETUNE.value
             else DefaultDataCollator(return_tensors="pt")
         ),
@@ -374,7 +412,9 @@ def main():
     trainer.train(resume_from_checkpoint=None)
     trainer.save_model()  # https://github.com/huggingface/transformers/blob/main/src/transformers/trainer.py#L2808
 
-    print_rank_0("\n Training completed!!! If there's a warning about missing keys above, please disregard :)")
+    print_rank_0(
+        "\n Training completed!!! If there's a warning about missing keys above, please disregard :)"
+    )
 
 
 if __name__ == "__main__":
