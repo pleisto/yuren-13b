@@ -2,7 +2,7 @@
 
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black) [![Lint](https://github.com/pleisto/yuren-13b/actions/workflows/lint.yml/badge.svg)](https://github.com/pleisto/yuren-13b/actions/workflows/lint.yml) [![License: Apache-2.0](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](./LICENSE) [![huggingface badge](https://img.shields.io/badge/%F0%9F%A4%97-Hugging%20Face-f2f4f5?labelColor=f2f4f5)](https://huggingface.co/pleisto/yuren-13b-chatml)
 
-Yuren 13B is an information synthesis large language model that has been continuously trained based on Llama 2 13B, which builds upon the data-centric work of Pleisto. This model has achieved state-of-the-art performance in various information synthesis scenarios, including information extraction in multiple languages with a focus on Chinese and English, natural language to SQL generation, and structured data output, all with the same parameter size. **For more English information, please refer to [model card](https://huggingface.co/pleisto/yuren-13b-chat).**
+Yuren 13B is an information synthesis large language model that has been continuously trained based on Llama 2 13B, which builds upon the data-centric work of Pleisto. This model has achieved state-of-the-art performance in various information synthesis scenarios, including information extraction in multiple languages with a focus on Chinese and English, natural language to SQL generation, and structured data output, all with the same parameter size. **For more English information, please refer to [model card](https://huggingface.co/pleisto/yuren-13b-chatml).**
 
 羽人 13B 是在 Llama 2 13B 基础上进行持续训练的**信息合成**大语言模型，建立在 Pleisto 以数据为中心的工作上。该模型在以中英文为主的多种语言的信息抽取、自然语言生成 SQL、结构化数据输出等信息合成类场景下实现了同等参数量下的 SOTA 水平。
 
@@ -26,9 +26,9 @@ Yuren 13B is an information synthesis large language model that has been continu
 # 推荐使用 rye 进行环境管理, 可访问 https://rye-up.com/guide/installation/#installing-rye 查看详情
 # curl -sSf https://rye-up.com/get | bash
 # source "$HOME/.rye/env"
-# rye sync # 可替代 pip install -r requirements.txt
+# rye sync # 可替代 pip install -r requirements.lock
 
-pip install -r requirements.txt
+pip install -r requirements.lock
 python -m webui.app "pleisto/yuren-13b-chat" # --load_8bit True --server_name "0.0.0.0" --share True
 ```
 
